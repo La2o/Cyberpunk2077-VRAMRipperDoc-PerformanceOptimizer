@@ -1,0 +1,5 @@
+bin/
+obj/
+dist/
+.claude/
+VRAM-RipperDoc-Report.*

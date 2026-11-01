@@ -1,0 +1,53 @@
+[size=5][b][color=#fcee0a]VRAM RipperDoc - Performance Optimizer[/color][/b][/size]
+[size=3]Find out which texture and mesh mods are eating your VRAM, and exactly what to cut to fit your GPU.[/size]
+
+Script profilers tell you what redscript/CET mods cost. Nothing told you what your [b].archive asset mods[/b] cost. Stutter with a big modlist on an 8–12 GB card? This tells you which mods are responsible.
+
+[size=4][b]What it does[/b][/size]
+[list]
+[*][b]Ranks every archive mod by added VRAM[/b]: the GPU data of each texture and mesh, [i]minus what the vanilla file it replaces already used[/i]
+[*][b]Geometry check[/b]: LOD0 triangles, meshes with no LODs, "5x vanilla triangles"
+[*][b]Texture check[/b]: 4K/8K, no mipmaps, uncompressed formats, "16x vanilla pixels"
+[*][b]Dead weight[/b]: files that lose a load-order conflict and [i]never load[/i] (archive/pc/mod order, modlist.txt and REDmod are all handled)
+[*][b]Broken archive detection[/b]: truncated or corrupt downloads named outright
+[*][b]Budget plan[/b]: detects your GPU's VRAM, suggests a mod budget, and lists which textures to halve to fit it
+[*][b]Real file names[/b], rebuilt from the mods' own import tables. No hash database needed.
+[*]Sortable, filterable [b]HTML report[/b], plus JSON for scripts and mod managers
+[/list]
+
+[b]Read-only.[/b] It never changes your game files.
+
+[size=4][b]Install[/b][/size]
+Vortex / MO2: install as usual. Manual: extract into your Cyberpunk 2077 folder.
+It goes to [i]Cyberpunk 2077\tools\VRAM RipperDoc\[/i]. Double-click [b]VramRipperdoc.exe[/b] and the report opens in your browser.
+
+No requirements: self-contained Windows x64 exe, no .NET install. It uses the game's own Oodle DLL to read compressed headers.
+
+[size=4][b]How it's different[/b][/size]
+[list]
+[*][b]Ultra+, OAI Tweaks, PinkStone[/b]: tune the engine. RipperDoc shows which [i]asset mods[/i] use the VRAM those settings have to work with.
+[*][b]FrameFlow, Adaptive Graphics Quality[/b]: lower quality at runtime after FPS drops. RipperDoc finds the asset cause before you launch.
+[*][b]RedProfiler, G's TOTAL Profiler[/b]: per-mod blame for [i]scripts[/i]. RipperDoc is the same idea for [i]textures and meshes[/i].
+[*][b]Universal Texture Downscaler[/b]: caps [i]every[/i] texture. RipperDoc points at the few worst offenders, so vanilla and light mods stay sharp.
+[*][b]CP2077 Texture Merger[/b]: picks the better texture in a conflict. RipperDoc reports what every asset costs, and which conflicting copies never load.
+[*][b]Advanced Crash Reporter[/b]: when no mod is in the stack it can only say "an archive mod may be responsible". RipperDoc names heavy, conflicting and corrupt archives.
+[/list]
+Use it [i]alongside[/i] all of the above.
+
+[size=4][b]Honest limits[/b][/size]
+[list]
+[*]Numbers are [b]estimates[/b] for "everything this mod adds is on screen". The game streams assets, so benchmark before and after any change.
+[*]Biggest win on [b]8–16 GB cards[/b] with heavy texture or clothing mods. If you're not VRAM-limited, you won't gain FPS.
+[*]v0.1 is the [b]scanner + plan[/b]. Apply it by picking a lower-res variant of a mod, or downscale in WolvenKit.
+[/list]
+
+[size=4][b]Roadmap[/b][/size]
+[list=1]
+[*][b]Budget mode[/b]: auto-generate a separate lighter archive with the planned textures downscaled (originals untouched)
+[*][b]Live tracker[/b]: RED4ext plugin showing which assets actually load in the current scene
+[/list]
+
+[b]Command line:[/b] --budget <GB>, --game <dir>, --out <dir>, --json, --hashes <file>, --no-vanilla. See the README.
+Source (MIT): [url=https://github.com/La2o/Cyberpunk2077-VRAMRipperDoc-PerformanceOptimizer]GitHub[/url]
+
+Feedback welcome, especially before/after VRAM numbers from heavy modlists.
