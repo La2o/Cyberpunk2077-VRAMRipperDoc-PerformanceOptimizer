@@ -126,6 +126,23 @@ public static unsafe class Oodle
     //                    callback, callbackUser, decoderMem, decoderMemSize, threadPhase)
     static delegate* unmanaged<byte*, long, byte*, long, int, int, int, long, long, long, long, long, long, int, long> _decompress;
     public static bool Available => _decompress != null;
+    static delegate* unmanaged<int, byte*, long, byte*, int, void*, long, long, void*, long, int> _compress;
+
+    /// <summary>Kraken-compresses into the game's "KARK" + u32 size framing. Returns null if Oodle is unavailable.</summary>
+    public static byte[]? CompressKark(byte[] data)
+    {
+        if (_compress == null) return null;
+        var output = new byte[8 + data.Length + 274 * ((data.Length + 0x3FFFF) / 0x40000) + 1024];
+        int n;
+        fixed (byte* src = data)
+        fixed (byte* dst = &output[8])
+            n = _compress(8 /* Kraken */, src, data.Length, dst, 4 /* Normal */, null, 0, 0, null, 0);
+        if (n <= 0) return null;
+        "KARK"u8.CopyTo(output);
+        BitConverter.GetBytes(data.Length).CopyTo(output, 4);
+        return output[..(8 + n)];
+    }
+
     public static string? LoadedFrom { get; private set; }
 
     public static bool TryLoad(IEnumerable<string> candidates)
@@ -136,6 +153,8 @@ public static unsafe class Oodle
             if (!NativeLibrary.TryLoad(path, out var lib)) continue;
             if (!NativeLibrary.TryGetExport(lib, "OodleLZ_Decompress", out var fn)) continue;
             _decompress = (delegate* unmanaged<byte*, long, byte*, long, int, int, int, long, long, long, long, long, long, int, long>)fn;
+            if (NativeLibrary.TryGetExport(lib, "OodleLZ_Compress", out var cfn))
+                _compress = (delegate* unmanaged<int, byte*, long, byte*, int, void*, long, long, void*, long, int>)cfn;
             LoadedFrom = path;
             return true;
         }

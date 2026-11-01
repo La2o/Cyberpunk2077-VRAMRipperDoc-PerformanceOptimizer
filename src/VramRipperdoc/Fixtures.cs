@@ -2,53 +2,6 @@ using System.Text;
 
 namespace VramRipperdoc;
 
-/// <summary>Writes RDAR archives by copying already-compressed segments from another archive.</summary>
-public sealed class ArchiveWriter
-{
-    readonly List<(ulong Hash, RdarArchive Src, ArchiveEntry Entry)> _files = new();
-    public void Add(RdarArchive src, ArchiveEntry e, ulong? newHash = null) => _files.Add((newHash ?? e.Hash, src, e));
-
-    public void Write(string path)
-    {
-        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-        using var fs = File.Create(path);
-        var bw = new BinaryWriter(fs, Encoding.ASCII);
-        fs.Position = 0xAC;
-        var entries = new List<(ulong Hash, ArchiveEntry E, uint SegStart, uint SegEnd, uint DepStart, uint DepEnd)>();
-        var segs = new List<Segment>();
-        var deps = new List<ulong>();
-        foreach (var (hash, src, e) in _files.OrderBy(f => f.Hash))
-        {
-            uint s0 = (uint)segs.Count, d0 = (uint)deps.Count;
-            foreach (var s in src.SegmentsOf(e))
-            {
-                var raw = src.ReadRaw(s);
-                segs.Add(new Segment((ulong)fs.Position, s.ZSize, s.Size));
-                bw.Write(raw);
-            }
-            for (uint i = e.DepsStart; i < e.DepsEnd; i++) deps.Add(src.Dependencies[(int)i]);
-            entries.Add((hash, e, s0, (uint)segs.Count, d0, (uint)deps.Count));
-        }
-        long indexPos = fs.Position;
-        bw.Write(8u);
-        bw.Write((uint)(entries.Count * 56 + segs.Count * 16 + deps.Count * 8 + 20));
-        bw.Write(0ul);
-        bw.Write((uint)entries.Count); bw.Write((uint)segs.Count); bw.Write((uint)deps.Count);
-        foreach (var x in entries)
-        {
-            bw.Write(x.Hash); bw.Write(x.E.Timestamp); bw.Write(x.E.NumInlineBufferSegments);
-            bw.Write(x.SegStart); bw.Write(x.SegEnd); bw.Write(x.DepStart); bw.Write(x.DepEnd); bw.Write(x.E.Sha1);
-        }
-        foreach (var s in segs) { bw.Write(s.Offset); bw.Write(s.ZSize); bw.Write(s.Size); }
-        foreach (var d in deps) bw.Write(d);
-        long indexSize = fs.Position - indexPos;
-        long end = fs.Position;
-        fs.Position = 0;
-        bw.Write(RdarArchive.Magic); bw.Write(12u); bw.Write((ulong)indexPos); bw.Write((uint)indexSize);
-        bw.Write(0ul); bw.Write(0u); bw.Write((ulong)end);
-    }
-}
-
 /// <summary>Builds a fake game folder of test mods from real game files (developer self-test).</summary>
 public static class Fixtures
 {
@@ -95,10 +48,100 @@ public static class Fixtures
         var na = new ArchiveWriter();
         for (int i = 0; i < 4 && i < big.Count; i++) na.Add(src, big[^(i + 1)], Fnv1a64.Hash($@"mymod\textures\new_{i}.xbm"));
         na.Write(Path.Combine(modDir, "NewOutfit.archive"));
+        // Cooked 2K+ textures under new paths: something for the budget plan to halve.
+        var huge = new ArchiveWriter(); int hugeCount = 0;
+        foreach (var e in src.Entries)
+        {
+            if (hugeCount >= 6) break;
+            var segs = src.SegmentsOf(e).ToList();
+            if (segs.Count != 2) continue;
+            var head = src.ReadSegment(segs[0]);
+            if (head == null || head[0] != 'C') continue;
+            var c = new Cr2wFile(head);
+            if (c.RootClass != "CBitmapTexture") continue;
+            int bi = c.Exports.FindIndex(x => x.ClassName == "rendRenderTextureBlobPC");
+            if (bi < 0 || c.ReadExport(bi).Get("header") is not Dictionary<string, object?> h || h.Get("sizeInfo") is not Dictionary<string, object?> si) continue;
+            if (Convert.ToInt32(si.Get("width") ?? 0) < 2048) continue;
+            huge.Add(src, e, Fnv1a64.Hash($@"hugemod\textures\t{hugeCount++}.xbm"));
+        }
+        huge.Write(Path.Combine(modDir, "HugeTextures.archive"));
+
+        // A mesh override whose first import points at a file that doesn't exist anywhere.
+        if (meshWithTex != null)
+        {
+            var segs = src.SegmentsOf(meshWithTex).ToList();
+            var head = src.ReadSegment(segs[0])!;
+            var c = new Cr2wFile(head);
+            var target = Encoding.UTF8.GetBytes(c.Imports[0]);
+            int pos = head.AsSpan().IndexOf(target);
+            head[pos + target.Length - 5] = (byte)'q'; // ..._d.xbm -> ..._q.xbm style typo
+            TextureShrinker.Rechecksum(head);
+            var raw = new List<(byte[], uint)> { (Oodle.CompressKark(head)!, (uint)head.Length) };
+            raw.AddRange(segs.Skip(1).Select(s => (src.ReadRaw(s), s.Size)));
+            var bw = new ArchiveWriter();
+            bw.Add(new WriteEntry(meshWithTex.Hash, meshWithTex.Timestamp, meshWithTex.NumInlineBufferSegments, raw, Array.Empty<ulong>(),
+                ArchiveWriter.FileSha1(head, segs.Skip(1).Select(s => src.ReadRaw(s)))));
+            bw.Write(Path.Combine(modDir, "#BrokenRef.archive"));
+        }
+
+        // Vortex deployment manifest + an MO2 instance, as those managers write them.
+        File.WriteAllText(Path.Combine(outRoot, "vortex.deployment.json"), """
+        {"instance":"test","version":1,"deploymentMethod":"hardlink_activator","gameId":"cyberpunk2077","files":[
+          {"relPath":"archive\\pc\\mod\\HD_Textures.archive","source":"HD Reworked Project-7652-1-4-1700000000","target":"","time":1700000000},
+          {"relPath":"archive\\pc\\mod\\#PriorityPatch.archive","source":"HD Reworked Project-7652-1-4-1700000000","target":"","time":1700000000},
+          {"relPath":"archive\\pc\\mod\\MeshPack.archive","source":"Manual Install","target":"","time":1700000000}]}
+        """);
+        var mo2 = Path.Combine(outRoot, "_mo2");
+        Directory.CreateDirectory(Path.Combine(mo2, "profiles", "Default"));
+        File.WriteAllText(Path.Combine(mo2, "ModOrganizer.ini"), "[General]\ngameName=Cyberpunk 2077\nselected_profile=@ByteArray(Default)\n");
+        File.WriteAllText(Path.Combine(mo2, "profiles", "Default", "modlist.txt"), "# managed by MO2\n+Better Skies\n-Disabled Mod\n");
+        var mo2Mod = Path.Combine(mo2, "mods", "Better Skies");
+        var sky = new ArchiveWriter(); foreach (var e in big.Skip(5).Take(2)) sky.Add(src, e, Fnv1a64.Hash($@"skies\t{e.Hash:x}.xbm"));
+        sky.Write(Path.Combine(mo2Mod, "archive", "pc", "mod", "BetterSkies.archive"));
+        File.WriteAllText(Path.Combine(mo2Mod, "meta.ini"), "[General]\nmodid=9999\nversion=1.0\n");
+        var dis = new ArchiveWriter(); dis.Add(src, big[0]); dis.Write(Path.Combine(mo2, "mods", "Disabled Mod", "archive", "pc", "mod", "Disabled.archive"));
+
         File.WriteAllBytes(Path.Combine(modDir, "zz_Broken.archive"), Encoding.ASCII.GetBytes("RDAR\x0c\0\0\0garbage-that-is-not-an-index"));
         var rm = new ArchiveWriter(); foreach (var e in meshes.Take(2)) rm.Add(src, e);
         rm.Write(Path.Combine(outRoot, "mods", "TestRedmod", "archives", "TestRedmod.archive"));
         Console.WriteLine($"fixtures written to {outRoot}");
+        return 0;
+    }
+}
+
+/// <summary>Developer in-game test: halves up to N vanilla 2K+ character textures into a removable budget archive.</summary>
+public static class IngameTest
+{
+    public static int Make(string game, int count, bool copyOnly = false)
+    {
+        Oodle.TryLoad(new[] { Path.Combine(game, "bin", "x64", "oo2ext_7_win64.dll") });
+        var w = new ArchiveWriter();
+        long before = 0, after = 0; int skipped = 0;
+        var seen = new HashSet<ulong>();
+        var sources = new[] { "basegame_3_nightcity", "basegame_4_appearance", "basegame_1_engine" }
+            .Select(n => new RdarArchive(Path.Combine(game, "archive", "pc", "content", n + ".archive"))).ToList();
+        foreach (var src in sources)
+        foreach (var e in src.Entries)
+        {
+            if (!seen.Add(e.Hash)) continue;
+            if (w.Count >= count) break;
+            var segs = src.SegmentsOf(e).ToList();
+            if (segs.Count != 2 || segs[1].Size < 4 << 20) continue; // 2K BC7 and up
+            var head = src.ReadSegment(segs[0]);
+            if (head == null || head[0] != 'C' || new Cr2wFile(head).RootClass != "CBitmapTexture") continue;
+            var buf = src.ReadSegment(segs[1])!;
+            if (copyOnly) { w.Add(src, e); before += buf.Length; after += buf.Length; continue; }
+            var r = TextureShrinker.Shrink(head, buf, 1, out _);
+            if (r == null) { skipped++; continue; }
+            var deps = Enumerable.Range((int)e.DepsStart, (int)(e.DepsEnd - e.DepsStart)).Select(i => src.Dependencies[i]).ToList();
+            w.Add(new WriteEntry(e.Hash, e.Timestamp, e.NumInlineBufferSegments, new[] { (r.HeaderRaw, r.HeaderSize), (r.BufferRaw, r.BufferSize) }, deps, r.Sha1));
+            before += buf.Length; after += r.BufferSize;
+        }
+        foreach (var s in sources) s.Dispose();
+        var path = Path.Combine(game, "archive", "pc", "mod", copyOnly ? $"!{Scanner.BudgetArchiveMarker}_COPYTEST.archive" : $"!{Scanner.BudgetArchiveMarker}_INGAME_TEST.archive");
+        w.Write(path);
+        Console.WriteLine($"{w.Count} textures halved ({skipped} skipped): {Report.Size(before)} -> {Report.Size(after)}");
+        Console.WriteLine($"Wrote {path} ({Report.Size(new FileInfo(path).Length)}). Remove with --remove-budget-archive.");
         return 0;
     }
 }

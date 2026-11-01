@@ -1,0 +1,21 @@
+name: Share mod VRAM costs
+description: Submit the anonymous VRAM-RipperDoc-Share.json from `VramRipperdoc --share`
+title: "[cost] "
+labels: ["community-costs"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Run `VramRipperdoc.exe --share`, open `VRAM-RipperDoc-Share.json` next to the exe and paste it below.
+        It contains only archive file names, sizes, optional Nexus mod ids and the numbers. No paths, no user names.
+  - type: textarea
+    id: share
+    attributes:
+      label: VRAM-RipperDoc-Share.json
+      render: json
+    validations:
+      required: true
+  - type: input
+    id: gpu
+    attributes:
+      label: GPU and resolution (optional)

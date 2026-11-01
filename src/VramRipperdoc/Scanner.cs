@@ -1,4 +1,6 @@
 using System.Collections.Concurrent;
+using System.Text;
+using System.Text.RegularExpressions;
 
 namespace VramRipperdoc;
 
@@ -18,16 +20,22 @@ public sealed class AssetInfo
     public long Tris0, Verts0;
     public int LodCount;
     public bool OverridesBase;
+    public bool IdenticalToVanilla;
     public long BaseGpuBytes;
     public int BaseWidth, BaseHeight;
     public long BaseTris0;
     public string? ShadowedBy;
+    public byte[] Sha1 = Array.Empty<byte>();
+    /// <summary>Hard references (CR2W imports) this file adds that the vanilla version didn't have.</summary>
+    public List<string> NewImports = new();
+    public List<string> MissingImports = new();
     public List<string> Flags = new();
 
     /// <summary>VRAM this asset adds compared to running without the mod.</summary>
     public long DeltaGpu => ShadowedBy != null ? 0 : OverridesBase ? GpuBytes - BaseGpuBytes : GpuBytes;
     public string DisplayName => Path ?? $"0x{Hash:X16}";
     public int MaxDim => Math.Max(Width, Height);
+    public bool Loads => ShadowedBy == null;
 }
 
 public sealed class ModReport
@@ -38,6 +46,11 @@ public sealed class ModReport
     public int Priority;
     public long DiskSize;
     public string? Error;
+    /// <summary>Installed mod this archive belongs to (from Vortex/MO2), if known.</summary>
+    public string? Package;
+    public int? NexusId;
+    public string? Manager;
+    public string? CommunityNote;
     public List<AssetInfo> Assets = new();
 
     public long GpuDelta => Assets.Sum(a => a.DeltaGpu);
@@ -45,11 +58,12 @@ public sealed class ModReport
     public long MeshDelta => Assets.Where(a => a.Kind == AssetKind.Mesh).Sum(a => a.DeltaGpu);
     public int Textures => Assets.Count(a => a.Kind == AssetKind.Texture);
     public int Meshes => Assets.Count(a => a.Kind == AssetKind.Mesh);
-    public long Tris0 => Assets.Where(a => a.ShadowedBy == null).Sum(a => a.Tris0);
-    public int Shadowed => Assets.Count(a => a.ShadowedBy != null);
-    public long ShadowedDisk => Assets.Where(a => a.ShadowedBy != null).Sum(a => a.DiskBytes);
+    public long Tris0 => Assets.Where(a => a.Loads).Sum(a => a.Tris0);
+    public int Shadowed => Assets.Count(a => !a.Loads);
+    public long ShadowedDisk => Assets.Where(a => !a.Loads).Sum(a => a.DiskBytes);
     public int Overrides => Assets.Count(a => a.OverridesBase);
-    public int FlagCount => Assets.Count(a => a.Flags.Count > 0 && a.ShadowedBy == null);
+    public int Missing => Assets.Where(a => a.Loads).Sum(a => a.MissingImports.Count);
+    public int FlagCount => Assets.Count(a => a.Flags.Count > 0 && a.Loads);
 }
 
 public sealed class ScanResult
@@ -59,6 +73,11 @@ public sealed class ScanResult
     public int BaseFileCount;
     public bool OodleLoaded;
     public GpuInfo? Gpu;
+    public GameSettings? Settings;
+    public string? BudgetArchive;
+    public List<string> ManagerNotes = new();
+    public string BudgetWhy = "";
+    public List<string> HistoryDiff = new();
     public TimeSpan Elapsed;
     public long TotalDelta => Mods.Sum(m => m.GpuDelta);
 }
@@ -69,14 +88,22 @@ public sealed class ScanOptions
     /// <summary>Folder laid out like the game root (archive/pc/mod, mods/) to read mods from. Defaults to GameDir.</summary>
     public string? ModRoot;
     public string? HashList;
+    public string? Mo2Instance;
     public bool CompareVanilla = true;
     public Action<string>? Log;
 }
 
+public sealed record ArchiveSource(string Path, string Source, string? Package = null, int? NexusId = null, string? Manager = null);
+
 public sealed class Scanner
 {
+    public const string BudgetArchiveMarker = "RipperDoc_Budget";
+    static readonly Regex PathRx = new(@"[A-Za-z0-9_\-\\/\.]{3,}\.(xbm|mesh|mi|mt|ent|app|mlsetup|mlmask|morphtarget|inkatlas|anims|rig|physicalscene|gradient|texarray|cubemap|envprobe|hp|mltemplate)\b",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
     readonly ScanOptions _o;
     readonly ConcurrentDictionary<ulong, string> _names = new();
+    readonly ConcurrentDictionary<ulong, byte> _referenced = new();
     readonly List<RdarArchive> _base = new();
     readonly Dictionary<ulong, (int Archive, int Entry)> _baseIndex = new();
 
@@ -86,30 +113,33 @@ public sealed class Scanner
     /// <summary>
     /// Archives in the order the game loads them: archive/pc/mod (modlist.txt first if present, then
     /// ordinal/ASCII name order), followed by REDmod archives. Earlier entries win file conflicts.
+    /// RipperDoc's own budget archive is left out so the plan is always computed on the real mods.
     /// </summary>
-    public static List<(string Path, string Source)> DiscoverLoadOrder(string gameDir)
+    public static List<ArchiveSource> DiscoverLoadOrder(string gameDir, IReadOnlyList<ArchiveSource>? extra = null)
     {
-        var result = new List<(string, string)>();
+        var result = new List<ArchiveSource>();
         var modDir = System.IO.Path.Combine(gameDir, "archive", "pc", "mod");
-        if (Directory.Exists(modDir))
+        var files = (Directory.Exists(modDir) ? Directory.GetFiles(modDir, "*.archive", SearchOption.TopDirectoryOnly) : Array.Empty<string>())
+            .Select(f => new ArchiveSource(f, "archive/pc/mod")).ToList();
+        // Mod-manager archives that aren't deployed into the game folder (MO2 virtual file system).
+        foreach (var x in extra ?? Array.Empty<ArchiveSource>())
+            if (!files.Any(f => string.Equals(System.IO.Path.GetFileName(f.Path), System.IO.Path.GetFileName(x.Path), StringComparison.OrdinalIgnoreCase)))
+                files.Add(x);
+        files = files.Where(f => !System.IO.Path.GetFileName(f.Path).Contains(BudgetArchiveMarker))
+            .OrderBy(f => System.IO.Path.GetFileName(f.Path), StringComparer.Ordinal).ToList();
+        var modlist = System.IO.Path.Combine(modDir, "modlist.txt");
+        if (File.Exists(modlist))
         {
-            var files = Directory.GetFiles(modDir, "*.archive", SearchOption.TopDirectoryOnly)
-                .OrderBy(f => System.IO.Path.GetFileName(f), StringComparer.Ordinal).ToList();
-            var modlist = System.IO.Path.Combine(modDir, "modlist.txt");
-            if (File.Exists(modlist))
+            var ordered = new List<ArchiveSource>();
+            foreach (var name in File.ReadAllLines(modlist).Select(l => l.Trim()).Where(l => l.Length > 0 && !l.StartsWith('#')))
             {
-                var listed = File.ReadAllLines(modlist).Select(l => l.Trim()).Where(l => l.Length > 0 && !l.StartsWith('#')).ToList();
-                var ordered = new List<string>();
-                foreach (var name in listed)
-                {
-                    var match = files.FirstOrDefault(f => string.Equals(System.IO.Path.GetFileName(f), name, StringComparison.OrdinalIgnoreCase));
-                    if (match != null && !ordered.Contains(match)) ordered.Add(match);
-                }
-                ordered.AddRange(files.Where(f => !ordered.Contains(f)));
-                files = ordered;
+                var match = files.FirstOrDefault(f => string.Equals(System.IO.Path.GetFileName(f.Path), name, StringComparison.OrdinalIgnoreCase));
+                if (match != null && !ordered.Contains(match)) ordered.Add(match);
             }
-            result.AddRange(files.Select(f => (f, "archive/pc/mod")));
+            ordered.AddRange(files.Where(f => !ordered.Contains(f)));
+            files = ordered;
         }
+        result.AddRange(files);
         var redmodDir = System.IO.Path.Combine(gameDir, "mods");
         if (Directory.Exists(redmodDir))
         {
@@ -118,7 +148,7 @@ public sealed class Scanner
                 var arch = System.IO.Path.Combine(mod, "archives");
                 if (!Directory.Exists(arch)) continue;
                 foreach (var f in Directory.GetFiles(arch, "*.archive").OrderBy(f => f, StringComparer.Ordinal))
-                    result.Add((f, "REDmod: " + System.IO.Path.GetFileName(mod)));
+                    result.Add(new ArchiveSource(f, "REDmod: " + System.IO.Path.GetFileName(mod), System.IO.Path.GetFileName(mod)));
             }
         }
         return result;
@@ -128,6 +158,7 @@ public sealed class Scanner
     {
         var sw = System.Diagnostics.Stopwatch.StartNew();
         var res = new ScanResult { GameDir = _o.GameDir };
+        var modRoot = _o.ModRoot ?? _o.GameDir;
 
         res.OodleLoaded = Oodle.Available || Oodle.TryLoad(new[]
         {
@@ -139,24 +170,29 @@ public sealed class Scanner
         if (_o.HashList != null) LoadHashList(_o.HashList);
         if (_o.CompareVanilla) res.BaseFileCount = LoadBaseIndex();
 
-        var order = DiscoverLoadOrder(_o.ModRoot ?? _o.GameDir);
+        var managers = ModManagers.Detect(_o.GameDir, modRoot, _o.Mo2Instance, Log);
+        res.ManagerNotes = managers.Notes;
+        var order = DiscoverLoadOrder(modRoot, managers.ExtraArchives);
+        res.BudgetArchive = BudgetArchive.FindExisting(modRoot);
         Log($"Found {order.Count} mod archive(s).");
         var mods = new ModReport[order.Count];
         var archives = new RdarArchive?[order.Count];
 
         Parallel.For(0, order.Count, new ParallelOptions { MaxDegreeOfParallelism = Environment.ProcessorCount }, i =>
         {
-            var (path, source) = order[i];
+            var src = order[i];
+            var info = managers.Lookup(src.Path);
             var mr = new ModReport
             {
-                Name = System.IO.Path.GetFileNameWithoutExtension(path),
-                File = path, Source = source, Priority = i,
-                DiskSize = new FileInfo(path).Length,
+                Name = System.IO.Path.GetFileNameWithoutExtension(src.Path),
+                File = src.Path, Source = src.Source, Priority = i,
+                DiskSize = new FileInfo(src.Path).Length,
+                Package = info?.Package ?? src.Package, NexusId = info?.NexusId ?? src.NexusId, Manager = info?.Manager ?? src.Manager,
             };
             mods[i] = mr;
             try
             {
-                var a = new RdarArchive(path);
+                var a = new RdarArchive(src.Path);
                 archives[i] = a;
                 foreach (var e in a.Entries) mr.Assets.Add(Analyze(a, e));
             }
@@ -172,18 +208,50 @@ public sealed class Scanner
                 else winner[a.Hash] = m;
             }
 
-        // Resolve names now that every file's imports have been collected, then flag.
+        ScanTextReferences(modRoot);
+        var dynamicArchives = ArchivesWithDynamicXl(modRoot);
+        var existing = new HashSet<ulong>(winner.Keys);
+        var bySha = new Dictionary<string, (ModReport Mod, AssetInfo Asset)>();
+
         foreach (var m in mods)
             foreach (var a in m.Assets)
             {
                 if (a.Path == null && _names.TryGetValue(a.Hash, out var p)) a.Path = p;
+                if (!a.Loads) continue;
                 AddFlags(a);
+
+                // Hard references that point nowhere (only ones the mod added, so vanilla's own dead links don't count).
+                if (_o.CompareVanilla)
+                    foreach (var imp in a.NewImports)
+                    {
+                        if (imp.IndexOfAny(new[] { '*', '{', '}', '$', '%' }) >= 0) continue;
+                        var h = Fnv1a64.Hash(imp);
+                        if (!existing.Contains(h) && !_baseIndex.ContainsKey(h)) a.MissingImports.Add(imp);
+                    }
+                if (a.MissingImports.Count > 0)
+                    a.Flags.Add($"references {a.MissingImports.Count} missing file(s): {string.Join(", ", a.MissingImports.Take(3))}{(a.MissingImports.Count > 3 ? ", ..." : "")}");
+
+                if (a.IdenticalToVanilla) a.Flags.Add("identical to vanilla (does nothing)");
+
+                // Same bytes under a different path in a loaded file: VRAM paid twice when both are used.
+                if (a.Kind != AssetKind.Other && a.GpuBytes >= 256 * 1024 && a.Sha1.Length == 20)
+                {
+                    var key = Convert.ToHexString(a.Sha1);
+                    if (bySha.TryGetValue(key, out var first) && first.Asset.Hash != a.Hash)
+                        a.Flags.Add($"duplicate of {first.Asset.DisplayName} in {first.Mod.Name} ({Report.Size(a.GpuBytes)} paid twice if both load)");
+                    else bySha.TryAdd(key, (m, a));
+                }
+
+                // New texture/mesh nothing points at: likely leftover (or spawned by a script we can't see).
+                if (!a.OverridesBase && a.Kind != AssetKind.Other && !_referenced.ContainsKey(a.Hash) && !dynamicArchives.Contains(m.Name))
+                    a.Flags.Add("possibly unused: nothing references this new file");
             }
 
         foreach (var a in archives) a?.Dispose();
         foreach (var b in _base) b.Dispose();
         res.Mods = mods.ToList();
         res.Gpu = GpuInfo.Detect();
+        res.Settings = GameSettings.Load();
         res.Elapsed = sw.Elapsed;
         return res;
     }
@@ -219,6 +287,56 @@ public sealed class Scanner
         Log($"Loaded {n:N0} names from hash list.");
     }
 
+    /// <summary>Paths named in ArchiveXL (.xl), TweakXL (.yaml/.tweak) and CET (.lua) files count as references.</summary>
+    void ScanTextReferences(string root)
+    {
+        var places = new (string Dir, string[] Patterns)[]
+        {
+            (System.IO.Path.Combine(root, "archive", "pc", "mod"), new[] { "*.xl" }),
+            (System.IO.Path.Combine(root, "mods"), new[] { "*.xl", "*.yaml", "*.yml", "*.tweak" }),
+            (System.IO.Path.Combine(root, "r6", "tweaks"), new[] { "*.yaml", "*.yml", "*.tweak" }),
+            (System.IO.Path.Combine(root, "bin", "x64", "plugins", "cyber_engine_tweaks", "mods"), new[] { "*.lua" }),
+        };
+        foreach (var (dir, patterns) in places)
+        {
+            if (!Directory.Exists(dir)) continue;
+            foreach (var pat in patterns)
+                foreach (var f in SafeFiles(dir, pat))
+                    try { foreach (Match m in PathRx.Matches(File.ReadAllText(f))) AddReference(m.Value); } catch { }
+        }
+    }
+
+    static IEnumerable<string> SafeFiles(string dir, string pattern)
+    {
+        try { return Directory.EnumerateFiles(dir, pattern, SearchOption.AllDirectories).Where(f => new FileInfo(f).Length < 8 << 20).ToList(); }
+        catch { return Array.Empty<string>(); }
+    }
+
+    /// <summary>Archives whose .xl uses substitutions ({gender}, *): their file references can't be resolved statically.</summary>
+    static HashSet<string> ArchivesWithDynamicXl(string root)
+    {
+        var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var dir = System.IO.Path.Combine(root, "archive", "pc", "mod");
+        if (!Directory.Exists(dir)) return set;
+        foreach (var xl in Directory.GetFiles(dir, "*.xl"))
+            try
+            {
+                var text = File.ReadAllText(xl);
+                if (text.Contains('{') || text.Contains('*'))
+                    set.Add(System.IO.Path.GetFileNameWithoutExtension(xl).Split('.')[0]);
+            }
+            catch { }
+        return set;
+    }
+
+    void AddReference(string path)
+    {
+        var p = path.Replace('/', '\\').TrimStart('\\');
+        var h = Fnv1a64.Hash(p);
+        _referenced.TryAdd(h, 0);
+        _names.TryAdd(h, p);
+    }
+
     AssetInfo Analyze(RdarArchive a, ArchiveEntry e)
     {
         var info = new AssetInfo
@@ -226,8 +344,9 @@ public sealed class Scanner
             Hash = e.Hash,
             DiskBytes = a.SegmentsOf(e).Sum(s => (long)s.ZSize),
             GpuBytes = a.BufferBytesOf(e),
+            Sha1 = e.Sha1,
         };
-        ReadDetails(a, e, info, collectNames: true);
+        var imports = ReadDetails(a, e, info, collectNames: true);
 
         if (_baseIndex.TryGetValue(e.Hash, out var b))
         {
@@ -235,28 +354,46 @@ public sealed class Scanner
             var ba = _base[b.Archive];
             var be = ba.Entries[b.Entry];
             info.BaseGpuBytes = ba.BufferBytesOf(be);
-            if (info.Kind != AssetKind.Other)
-            {
-                var vanilla = new AssetInfo();
-                lock (ba) ReadDetails(ba, be, vanilla, collectNames: false);
-                info.BaseWidth = vanilla.Width; info.BaseHeight = vanilla.Height; info.BaseTris0 = vanilla.Tris0;
-            }
+            info.IdenticalToVanilla = be.Sha1.AsSpan().SequenceEqual(e.Sha1);
+            var vanilla = new AssetInfo();
+            List<(string, ushort)> baseImports;
+            lock (ba) baseImports = ReadDetails(ba, be, vanilla, collectNames: false);
+            info.BaseWidth = vanilla.Width; info.BaseHeight = vanilla.Height; info.BaseTris0 = vanilla.Tris0;
+            var known = new HashSet<string>(baseImports.Select(i => i.Item1), StringComparer.OrdinalIgnoreCase);
+            info.NewImports = imports.Where(i => IsHardImport(i.Item2) && !known.Contains(i.Item1)).Select(i => i.Item1).ToList();
         }
+        else info.NewImports = imports.Where(i => IsHardImport(i.Item2)).Select(i => i.Item1).ToList();
         return info;
     }
 
-    void ReadDetails(RdarArchive a, ArchiveEntry e, AssetInfo info, bool collectNames)
+    // Import flags: 4 = soft (optional), 8 = embedded, 16 = in-place. Only the rest must exist on disk.
+    static bool IsHardImport(ushort flags) => (flags & (4 | 8 | 16)) == 0;
+
+    List<(string Path, ushort Flags)> ReadDetails(RdarArchive a, ArchiveEntry e, AssetInfo info, bool collectNames)
     {
-        if (e.SegmentsEnd <= e.SegmentsStart) return;
+        var imports = new List<(string, ushort)>();
+        if (e.SegmentsEnd <= e.SegmentsStart) return imports;
         byte[]? head;
-        try { head = a.ReadSegment(a.Segments[(int)e.SegmentsStart]); } catch { return; }
-        if (head == null || head.Length < 4 || head[0] != 'C' || head[1] != 'R') return;
+        try { head = a.ReadSegment(a.Segments[(int)e.SegmentsStart]); } catch { return imports; }
+        if (head == null || head.Length < 4 || head[0] != 'C' || head[1] != 'R') return imports;
         Cr2wFile c;
-        try { c = new Cr2wFile(head); } catch { return; }
+        try { c = new Cr2wFile(head); } catch { return imports; }
         info.Class = c.RootClass;
+        imports.AddRange(c.Imports.Zip(c.ImportFlags));
         if (collectNames)
+        {
             foreach (var imp in c.Imports)
-                if (imp.Length > 0) _names.TryAdd(Fnv1a64.Hash(imp), imp);
+                if (imp.Length > 0) AddReference(imp);
+            // Meshes, appearances and entities keep more references in small embedded buffers.
+            if (c.RootClass != "CBitmapTexture" && c.RootClass != "CTextureArray")
+                foreach (var s in a.SegmentsOf(e).Skip(1).Where(s => s.Size <= 1 << 20))
+                    try
+                    {
+                        var buf = a.ReadSegment(s);
+                        if (buf != null) foreach (Match m in PathRx.Matches(Encoding.Latin1.GetString(buf))) AddReference(m.Value);
+                    }
+                    catch { }
+        }
 
         try
         {
@@ -299,11 +436,11 @@ public sealed class Scanner
             }
         }
         catch { /* keep sizes; details are best-effort */ }
+        return imports;
     }
 
     static void AddFlags(AssetInfo a)
     {
-        if (a.ShadowedBy != null) return;
         if (a.Kind == AssetKind.Texture)
         {
             if (a.MaxDim >= 8192) a.Flags.Add("8K texture");

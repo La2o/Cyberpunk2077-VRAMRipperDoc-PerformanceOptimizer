@@ -15,6 +15,7 @@ public sealed class Cr2wFile
     public List<string> Names = new();
     /// <summary>Depot paths this file references (textures, materials, meshes...). Used to put names on hashes.</summary>
     public List<string> Imports = new();
+    public List<ushort> ImportFlags = new();
     public List<Cr2wExport> Exports = new();
     public List<Cr2wBuffer> Buffers = new();
     readonly byte[] _data;
@@ -45,8 +46,9 @@ public sealed class Cr2wFile
         br.BaseStream.Position = tables[2].Offset;
         for (int i = 0; i < tables[2].Count; i++)
         {
-            uint off = br.ReadUInt32(); br.ReadUInt16(); br.ReadUInt16();
+            uint off = br.ReadUInt32(); br.ReadUInt16(); ushort flags = br.ReadUInt16();
             Imports.Add(ReadCString(strOff + off));
+            ImportFlags.Add(flags);
         }
         br.BaseStream.Position = tables[4].Offset;
         for (int i = 0; i < tables[4].Count; i++)

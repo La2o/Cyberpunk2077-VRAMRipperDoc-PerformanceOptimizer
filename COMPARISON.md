@@ -8,7 +8,7 @@ It does not compete with the tools below. Run it alongside them.
 
 | | What it looks at | Per-mod blame? | Changes your game? | Where VRAM RipperDoc differs |
 |---|---|---|---|---|
-| **VRAM RipperDoc** | `.archive` asset mods: textures, meshes, conflicts | **Yes:** per archive and per file | **No:** read-only scan + plan | — |
+| **VRAM RipperDoc** | `.archive` asset mods: textures, meshes, conflicts, missing references, real in-game VRAM | **Yes:** per archive, per installed mod and per file | Scan is read-only; the optional budget archive is one separate, deletable file | — |
 | [Ultra+](https://www.nexusmods.com/cyberpunk2077/mods/10490) | Engine/path-tracing config, frame timing, stutter | No | Yes (engine settings) | Ultra+ tunes the engine. RipperDoc shows which *asset mods* eat the VRAM that those settings have to work with. |
 | [OAI Tweaks Suite](https://www.nexusmods.com/cyberpunk2077/mods/23257) | Engine tweaks for 1% lows and CPU load | No | Yes | Targets CPU and frame pacing. RipperDoc targets GPU memory from mods. |
 | [PinkStone PathTracing](https://en.gamegpu.com/news/igry/mod-pinkstone-pathtracing-povyshaet-fps-v-cyberpunk-2077-na-videokartakh-radeon) | Ray/bounce counts (Radeon) | No | Yes | Trades lighting quality for FPS. RipperDoc trades only the mod assets you choose. |
@@ -28,12 +28,15 @@ It does not compete with the tools below. Run it alongside them.
 3. **Conflict waste.** It replays the game's load order (`archive/pc/mod` in ASCII order or `modlist.txt`, then REDmod). Files that lose a conflict are marked *never loads*: disk space and install clutter with zero effect.
 4. **Readable names.** Archives store only hashes. RipperDoc rebuilds paths from the import tables inside the mods' own files, without needing an external hash database.
 5. **Budget plan.** It suggests a mod budget from your GPU's VRAM (or you set one with `--budget`), then lists exactly which textures to halve to fit, with the saving for each.
-6. **Broken archive detection.** Truncated or corrupt `.archive` files (a classic cause of crashes on start) are reported by name.
-7. **Read-only.** Nothing in your game folder is modified. Vanilla files are only read to compare against.
+6. **Broken archive and missing-requirement detection.** Truncated or corrupt `.archive` files are named, as are mods that reference files that aren't installed (a missing requirement). Only references the mod *added* count, so vanilla's own dead links never cause false alarms.
+7. **Selective, reversible fix.** `--make-budget-archive` halves only the planned textures by dropping their top mip, using the game's own smaller mips with no re-encoding. It goes into one extra archive that loads first. Your mods are untouched, and deleting that file undoes it. This was tested in game on 2.5.
+8. **Real measurements.** `--live` records the game's actual dedicated VRAM using Windows performance counters (the same source as Task Manager). It compares sessions so you see before and after, not just estimates.
+9. **Knows your setup.** It reads your Vortex or MO2 install to group archives by mod and link their Nexus pages, and reads your in-game settings to size the budget.
+10. **Housekeeping.** It finds files identical to vanilla (they do nothing), duplicate copies across mods, and likely unused leftovers. It shows what changed since the last scan and gives you a copy-paste summary for support threads.
 
 ## Honest limits
 
 - **Estimates, not live usage.** The game streams assets, so a 4K texture you never see costs nothing in practice. The numbers are an upper bound for "everything this mod adds is on screen". Benchmark before and after any change.
 - **Biggest win on 8–16 GB cards** with heavy texture or clothing mods. If you aren't VRAM-limited you won't gain FPS (the Environment Textures Overhaul author says the same about ETO).
-- **The plan is advisory in v0.1.** Generating the lighter archive automatically (stage 2) and an in-game live tracker (stage 3, RED4ext) are on the roadmap. Today you apply the plan by choosing a lower-resolution variant of a mod, or by downscaling with WolvenKit.
+- **The budget archive halves textures; it doesn't touch meshes.** Dense meshes are flagged for you to swap or remove. A live per-asset tracker (RED4ext) is still on the roadmap.
 - The comparison table above is based on each mod's public description. Nexus blocked most direct page reads during research, so tell us if something is out of date.

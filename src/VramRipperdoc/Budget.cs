@@ -40,6 +40,19 @@ public sealed record GpuInfo(string Name, long VramBytes)
         double budget = gb switch { < 7 => 0.25, < 9 => 0.5, < 11 => 1.0, < 13 => 2.0, < 17 => 4.0, < 21 => 7.0, _ => 12.0 };
         return (long)(budget * (1L << 30));
     }
+
+    /// <summary>
+    /// Settings-aware budget: VRAM minus ~0.6 GB for Windows/overlays minus the estimated vanilla need,
+    /// never below 0.25 GB. Falls back to <see cref="SuggestedModBudget"/> when settings are unknown.
+    /// </summary>
+    public static (long Budget, string Why) SuggestBudget(long vram, GameSettings? s)
+    {
+        if (s == null || s.Width == 0)
+            return (SuggestedModBudget(vram), "rule of thumb for your VRAM (game settings not found)");
+        long vanilla = s.EstimatedVanillaBytes();
+        long budget = Math.Max(256L << 20, vram - (600L << 20) - vanilla);
+        return (budget, $"{Report.Size(vram)} VRAM - ~{Report.Size(vanilla)} vanilla at {s.Describe()} - 0.6 GB for Windows");
+    }
 }
 
 public sealed record PlanStep(ModReport Mod, AssetInfo Asset, int Halvings, long Saves);
