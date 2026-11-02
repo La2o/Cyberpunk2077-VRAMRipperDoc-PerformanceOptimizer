@@ -18,53 +18,91 @@ public static class BudgetArchive
     public static long EstimateBytes(IEnumerable<PlanStep> steps) => steps.Sum(s =>
         (long)((s.Asset.GpuBytes >> (2 * s.Halvings)) * Math.Clamp(s.Asset.GpuBytes > 0 ? (double)s.Asset.DiskBytes / s.Asset.GpuBytes : 1, 0.05, 1.0)));
 
+    /// <summary>Live state of a build, read by the UI thread (progress, watchdog) without blocking workers.</summary>
+    public sealed class BuildStatus
+    {
+        public int Done;
+        public int Total;
+        public readonly System.Collections.Concurrent.ConcurrentDictionary<string, DateTime> InFlight = new();
+    }
+
+    const string StagingPattern = "RipperDoc-*.ripperdoc-tmp";
+
     /// <summary>
     /// Writes the plan. Textures are shrunk in parallel (Oodle (de)compression is the slow part);
-    /// reads from each source archive are serialized, and data streams straight to disk.
+    /// reads from each source archive are serialized, data streams straight to disk, and the amount
+    /// of texture data held in memory at once is capped so 8K textures can't exhaust RAM.
+    /// Workers never touch the console: progress is read from <paramref name="status"/> by the caller.
     /// </summary>
-    public static Outcome Build(ScanResult r, BudgetPlan plan, string modRoot, Action<string> log, Action<int, int>? progress = null)
+    public static Outcome Build(ScanResult r, BudgetPlan plan, string modRoot, Action<string> log,
+        BuildStatus? status = null, int threads = 0, Action<string>? trace = null, bool stageInTemp = false)
     {
         if (!Oodle.Available) throw new InvalidOperationException("Oodle (bin/x64/oo2ext_7_win64.dll) is required to write archives.");
         var dir = System.IO.Path.Combine(modRoot, "archive", "pc", "mod");
         Directory.CreateDirectory(dir);
         Remove(modRoot, quiet: true);
+        status ??= new BuildStatus();
+        status.Total = plan.Steps.Count;
+        if (threads <= 0) threads = Math.Clamp(Environment.ProcessorCount - 1, 1, 8);
+        trace?.Invoke($"build: {plan.Steps.Count} textures, {threads} thread(s), staging in {(stageInTemp ? "temp" : "mod folder")}");
 
         var sources = new Dictionary<string, (RdarArchive A, Dictionary<ulong, ArchiveEntry> ByHash)>(StringComparer.OrdinalIgnoreCase);
         var skipped = new System.Collections.Concurrent.ConcurrentBag<string>();
         long saved = 0;
-        int done = 0, total = plan.Steps.Count;
-        using var writer = new ArchiveWriter(dir);
+        // Cap on uncompressed texture bytes being processed at once (one 8K BC7 texture alone is ~90 MB).
+        const long memoryCap = 1536L << 20;
+        long inFlightBytes = 0;
+        var memGate = new object();
+        using var writer = new ArchiveWriter(stageInTemp ? System.IO.Path.GetTempPath() : dir);
         try
         {
             foreach (var file in plan.Steps.Select(s => s.Mod.File).Distinct(StringComparer.OrdinalIgnoreCase))
             {
                 try { var a = new RdarArchive(file); sources[file] = (a, a.Entries.ToDictionary(e => e.Hash)); }
-                catch (Exception ex) { skipped.Add($"{System.IO.Path.GetFileName(file)} ({ex.Message})"); }
+                catch (Exception ex) { skipped.Add($"{System.IO.Path.GetFileName(file)} ({ex.Message})"); trace?.Invoke($"cannot open {file}: {ex}"); }
             }
 
-            var options = new ParallelOptions { MaxDegreeOfParallelism = Math.Clamp(Environment.ProcessorCount - 1, 1, 8) };
+            var options = new ParallelOptions { MaxDegreeOfParallelism = threads };
             Parallel.ForEach(plan.Steps.OrderBy(s => s.Mod.File, StringComparer.OrdinalIgnoreCase), options, step =>
             {
                 string label = $"{step.Mod.Name}: {step.Asset.DisplayName}";
+                long need = 0;
+                var sw = System.Diagnostics.Stopwatch.StartNew();
                 try
                 {
-                    if (!sources.TryGetValue(step.Mod.File, out var src) || !src.ByHash.TryGetValue(step.Asset.Hash, out var e)) { skipped.Add($"{label} (not found)"); return; }
+                    if (!sources.TryGetValue(step.Mod.File, out var src) || !src.ByHash.TryGetValue(step.Asset.Hash, out var e)) { skipped.Add($"{label} (not found)"); trace?.Invoke($"skip {label}: not found"); return; }
                     var segs = src.A.SegmentsOf(e).ToList();
-                    if (segs.Count != 2) { skipped.Add($"{label} (unusual layout)"); return; }
+                    if (segs.Count != 2) { skipped.Add($"{label} (unusual layout)"); trace?.Invoke($"skip {label}: unusual layout ({segs.Count} segments)"); return; }
+
+                    need = segs[0].Size + 2L * segs[1].Size + segs[1].ZSize;
+                    lock (memGate)
+                    {
+                        while (inFlightBytes > 0 && inFlightBytes + need > memoryCap) Monitor.Wait(memGate);
+                        inFlightBytes += need;
+                    }
+                    status.InFlight[label] = DateTime.UtcNow;
+                    trace?.Invoke($"start {label} ({segs[1].Size >> 20} MB)");
+
                     byte[] rawHead, rawBuf;
                     lock (src.A) { rawHead = src.A.ReadRaw(segs[0]); rawBuf = src.A.ReadRaw(segs[1]); }
                     var head = segs[0].ZSize == segs[0].Size ? rawHead : Oodle.DecompressKark(rawHead, (int)segs[0].Size);
                     var buf = segs[1].ZSize == segs[1].Size ? rawBuf : Oodle.DecompressKark(rawBuf, (int)segs[1].Size);
-                    if (head == null || buf == null) { skipped.Add($"{label} (unreadable)"); return; }
+                    if (head == null || buf == null) { skipped.Add($"{label} (unreadable)"); trace?.Invoke($"skip {label}: unreadable"); return; }
                     var res = TextureShrinker.Shrink(head, buf, step.Halvings, out var why);
-                    if (res == null) { skipped.Add($"{label} ({why})"); return; }
+                    if (res == null) { skipped.Add($"{label} ({why})"); trace?.Invoke($"skip {label}: {why}"); return; }
                     var deps = Enumerable.Range((int)e.DepsStart, (int)(e.DepsEnd - e.DepsStart)).Select(i => src.A.Dependencies[i]).ToList();
                     writer.Add(new WriteEntry(e.Hash, e.Timestamp, e.NumInlineBufferSegments,
                         new[] { (res.HeaderRaw, res.HeaderSize), (res.BufferRaw, res.BufferSize) }, deps, res.Sha1));
                     Interlocked.Add(ref saved, buf.Length - res.BufferSize);
+                    trace?.Invoke($"done  {label} in {sw.ElapsedMilliseconds} ms");
                 }
-                catch (Exception ex) { skipped.Add($"{label} ({ex.Message})"); }
-                finally { progress?.Invoke(Interlocked.Increment(ref done), total); }
+                catch (Exception ex) { skipped.Add($"{label} ({ex.Message})"); trace?.Invoke($"error {label}: {ex}"); }
+                finally
+                {
+                    status.InFlight.TryRemove(label, out _);
+                    if (need > 0) lock (memGate) { inFlightBytes -= need; Monitor.PulseAll(memGate); }
+                    Interlocked.Increment(ref status.Done);
+                }
             });
         }
         finally
@@ -106,7 +144,8 @@ public static class BudgetArchive
             if (!quiet) Console.WriteLine($"Removed {f}");
         }
         // Leftovers from an interrupted run.
-        foreach (var f in Directory.GetFiles(dir, "RipperDoc-*.part")) try { File.Delete(f); } catch { }
+        foreach (var d in new[] { dir, System.IO.Path.GetTempPath() })
+            foreach (var f in Directory.GetFiles(d, StagingPattern).Concat(Directory.GetFiles(d, "RipperDoc-*.part"))) try { File.Delete(f); } catch { }
         var modlist = System.IO.Path.Combine(dir, "modlist.txt");
         if (File.Exists(modlist))
         {

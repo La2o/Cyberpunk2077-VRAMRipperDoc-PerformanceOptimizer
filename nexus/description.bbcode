@@ -54,7 +54,9 @@ No. That's every piece of clothing, every car and every prop you have installed,
 After [b]2 - Apply budget fix[/b] finishes, it opens Explorer with the new file selected: [i]archive\pc\mod\!RipperDoc_Budget.archive[/i]. If it says "Nothing to fix", your mods already fit (answer Y to the second question to shrink new items' 4K textures anyway). If you run it through Mod Organizer 2, MO2 puts the file in its [i]Overwrite[/i] folder; that works, or right-click Overwrite > Create mod to keep it tidy.
 
 [b]The scan or the fix seems stuck / nothing opens.[/b]
-Big mod lists (thousands of archives) take a few minutes. Watch the "Scanning mods: X / Y" counter, and while the fix is being written, the "Writing fix: X / Y textures" counter with time left. (Before v0.2.3 the writing step showed no progress and could be slow on huge lists; update if you're on an older version.) The report opens in your browser when it's done, and is also saved as [i]VRAM-RipperDoc-Report.html[/i] next to the tool.
+Big mod lists (thousands of archives) take a few minutes. Watch the "Scanning mods: X / Y" counter, and while the fix is being written, the "Writing fix: X / Y textures" counter with time left. The report opens in your browser when it's done, and is also saved as [i]VRAM-RipperDoc-Report.html[/i] next to the tool.
+[b]Please use v0.2.4 or newer.[/b] In older versions, clicking inside the black window could pause the tool (Windows does that while you select text) and it looked stuck at the end. If it ever stops moving for a minute, it now prints which texture it's working on. Please post the [i]VRAM-RipperDoc-Fix.log[/i] file from the tool's folder in the comments so I can fix it.
+A leftover [i]RipperDoc-....ripperdoc-tmp[/i] (or older [i].part[/i]) file is an unfinished fix. Running the fix or Undo again deletes it.
 
 [b]Does it work with Mod Organizer 2?[/b]
 Yes. It looks for your MO2 setup automatically. If no mods are found, [b]1 - Scan my mods[/b] asks for your MO2 folder (the one with ModOrganizer.ini) once and remembers it. You can also run it from inside MO2 as an executable.

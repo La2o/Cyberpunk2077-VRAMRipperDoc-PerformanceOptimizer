@@ -22,6 +22,7 @@ Usage: VramRipperdoc [options]
  Apply the plan (optional)
   --make-budget-archive     Write ONE extra archive with the planned textures halved (your mods are untouched)
   --include-new-items       Also halve 4K+ textures of new clothing, cars and props (they only cost VRAM while used)
+  --threads <n>             Worker threads for writing the fix (default: CPU cores - 1, max 8; 2 under MO2)
   --remove-budget-archive   Delete it again
  Measure real VRAM
   --live [--label <name>] [--seconds <n>]   Record the game's actual VRAM use while you play (Ctrl+C to stop)
@@ -31,7 +32,7 @@ Usage: VramRipperdoc [options]
 """;
 
 var flags = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-    { "no-vanilla", "no-open", "json", "help", "pause", "make-budget-archive", "include-new-items", "remove-budget-archive", "live", "share", "ask-mo2", "ask" };
+    { "no-vanilla", "no-open", "json", "help", "pause", "make-budget-archive", "include-new-items", "remove-budget-archive", "live", "share", "ask-mo2", "ask", "stress-all", "stage-in-temp" };
 var opts = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
 for (int i = 0; i < args.Length; i++)
 {
@@ -43,6 +44,14 @@ for (int i = 0; i < args.Length; i++)
     else opts[key] = i + 1 < args.Length ? args[++i] : null;
 }
 if (opts.ContainsKey("help")) { Console.WriteLine(Usage); return 0; }
+
+DisableQuickEdit();
+// A crash should leave a message, not a silently closed window.
+AppDomain.CurrentDomain.UnhandledException += (_, e) =>
+{
+    var msg = $"VRAM RipperDoc crashed: {e.ExceptionObject}";
+    try { Console.Error.WriteLine(msg); File.AppendAllText(Path.Combine(AppContext.BaseDirectory, "VRAM-RipperDoc-Crash.log"), $"{DateTime.Now}: {msg}{Environment.NewLine}"); } catch { }
+};
 
 // Developer self-tests (not part of the user-facing help).
 if (opts.TryGetValue("verify", out var verifyArchive) && verifyArchive != null)
@@ -151,6 +160,8 @@ if (opts.TryGetValue("budget", out var b) && double.TryParse(b, System.Globaliza
 }
 else (budget, result.BudgetWhy) = GpuInfo.SuggestBudget(result.Gpu?.VramBytes ?? 8L << 30, result.Settings);
 var plan = BudgetPlan.Build(result, budget, includeNew: opts.ContainsKey("include-new-items"));
+if (opts.ContainsKey("stress-all")) // developer stress test: halve every loaded 2K+ texture
+    plan.Steps = result.Mods.SelectMany(m => m.Assets.Where(a => a.Kind == AssetKind.Texture && a.Loads && a.MaxDim >= 2048).Select(a => new PlanStep(m, a, 1, a.GpuBytes * 3 / 4))).ToList();
 
 if (opts.TryGetValue("community", out var communitySource) && communitySource != null)
     Community.Annotate(result, Community.Load(communitySource, Log));
@@ -216,28 +227,51 @@ if (makingFix)
     }
     else
     {
+        bool viaMo2 = UnderMo2();
+        int threads = int.TryParse(opts.GetValueOrDefault("threads"), out var t) && t > 0 ? t
+            : viaMo2 ? 2 // MO2's virtual file system is safest with little concurrent file I/O
+            : Math.Clamp(Environment.ProcessorCount - 1, 1, 8);
         Console.WriteLine($"Writing the fix: {plan.Steps.Count:N0} texture(s). Leave this window open until it says DONE.");
+        Console.WriteLine("  (Don't click inside this window while it works: Windows pauses programs while text is being selected.)");
         var started = System.Diagnostics.Stopwatch.StartNew();
-        int lastShown = -1;
-        var writeLock = new object();
-        void WriteProgress(int done, int total)
+        var status = new BudgetArchive.BuildStatus();
+        using var fixLog = OpenLog(Path.Combine(outDir, "VRAM-RipperDoc-Fix.log"));
+        void Trace(string s) { lock (fixLog) fixLog.WriteLine($"{DateTime.Now:HH:mm:ss.fff} {s}"); }
+        Trace($"v{Report.Version} game={game} mo2={viaMo2} threads={threads} steps={plan.Steps.Count}");
+
+        // Progress runs on its own thread and only reads counters, so a blocked console can never stall the work.
+        var buildDone = new ManualResetEventSlim();
+        var ui = new Thread(() =>
         {
-            lock (writeLock)
+            int lastDone = -1; var lastChange = DateTime.UtcNow; bool warned = false;
+            while (!buildDone.Wait(500))
             {
-                int pct = done * 100 / Math.Max(1, total);
-                if (pct == lastShown && done != total) return;
-                lastShown = pct;
+                int done = Volatile.Read(ref status.Done), total = Math.Max(1, status.Total);
+                if (done != lastDone) { lastDone = done; lastChange = DateTime.UtcNow; warned = false; }
                 string eta = "";
-                if (done >= 5 && done < total)
+                if (done >= 3 && done < total)
                 {
                     var left = TimeSpan.FromSeconds(started.Elapsed.TotalSeconds / done * (total - done));
-                    eta = left.TotalMinutes >= 1 ? $" · about {Math.Ceiling(left.TotalMinutes)} min left" : $" · about {Math.Ceiling(left.TotalSeconds)} s left";
+                    eta = left.TotalMinutes >= 1 ? $" · about {Math.Ceiling(left.TotalMinutes)} min left" : $" · about {Math.Max(1, Math.Ceiling(left.TotalSeconds))} s left";
                 }
-                Console.Write($"\r  Writing fix: {done:N0} / {total:N0} textures ({pct}%){eta}        ");
-                if (done == total) Console.WriteLine();
+                Console.Write($"\r  Writing fix: {done:N0} / {total:N0} textures ({done * 100 / total}%){eta}        ");
+                if (!warned && DateTime.UtcNow - lastChange > TimeSpan.FromSeconds(60))
+                {
+                    warned = true;
+                    var slow = status.InFlight.OrderBy(kv => kv.Value).Take(3).Select(kv => kv.Key).ToList();
+                    Console.WriteLine();
+                    Console.WriteLine($"  Still working on: {string.Join("; ", slow)}");
+                    Console.WriteLine("  (If this never moves on, close the window and post VRAM-RipperDoc-Fix.log on the mod page.)");
+                    Trace("watchdog: no progress for 60 s; in flight: " + string.Join("; ", status.InFlight.Keys));
+                }
             }
-        }
-        var outcome = BudgetArchive.Build(result, plan, modRoot, Log, WriteProgress);
+            Console.WriteLine($"\r  Writing fix: {status.Done:N0} / {status.Total:N0} textures (100%)                         ");
+        }) { IsBackground = true };
+        ui.Start();
+        BudgetArchive.Outcome outcome;
+        try { outcome = BudgetArchive.Build(result, plan, modRoot, Log, status, threads, Trace, stageInTemp: viaMo2 || opts.ContainsKey("stage-in-temp")); }
+        finally { buildDone.Set(); ui.Join(2000); }
+        Trace($"finished: {outcome.Textures} written, {outcome.Skipped.Count} skipped, {started.Elapsed.TotalSeconds:0}s");
         Console.WriteLine($"  Finished in {started.Elapsed.TotalSeconds:0}s.");
         Console.WriteLine();
         result.BudgetArchive = outcome.Path;
@@ -289,6 +323,26 @@ void Pause()
 {
     // Double-clicked (no args): keep the window open so the summary can be read.
     if ((args.Length == 0 || opts.ContainsKey("pause")) && !Console.IsInputRedirected) { Console.WriteLine("Press any key to close."); Console.ReadKey(true); }
+}
+
+static StreamWriter OpenLog(string path)
+{
+    try { Directory.CreateDirectory(Path.GetDirectoryName(path)!); return new StreamWriter(path, append: false) { AutoFlush = true }; }
+    catch { return StreamWriter.Null; }
+}
+
+// Windows "QuickEdit": clicking in a console window starts a text selection and pauses every
+// program writing to it until Esc/Enter. Players click windows; switch it off for this process.
+static void DisableQuickEdit()
+{
+    if (!OperatingSystem.IsWindows() || Console.IsInputRedirected) return;
+    try
+    {
+        var h = NativeConsole.GetStdHandle(-10); // STD_INPUT_HANDLE
+        if (NativeConsole.GetConsoleMode(h, out uint mode))
+            NativeConsole.SetConsoleMode(h, (mode & ~0x0040u) | 0x0080u); // clear QUICK_EDIT, set EXTENDED_FLAGS
+    }
+    catch { }
 }
 
 // Y/N question; works with a keyboard or piped input.
@@ -403,4 +457,11 @@ static string? FindGame(string? hint)
     }
     var found = candidates.FirstOrDefault(IsGame);
     return found == null ? null : Path.GetFullPath(found);
+}
+
+static class NativeConsole
+{
+    [System.Runtime.InteropServices.DllImport("kernel32.dll")] public static extern IntPtr GetStdHandle(int nStdHandle);
+    [System.Runtime.InteropServices.DllImport("kernel32.dll")] public static extern bool GetConsoleMode(IntPtr hConsoleHandle, out uint lpMode);
+    [System.Runtime.InteropServices.DllImport("kernel32.dll")] public static extern bool SetConsoleMode(IntPtr hConsoleHandle, uint dwMode);
 }

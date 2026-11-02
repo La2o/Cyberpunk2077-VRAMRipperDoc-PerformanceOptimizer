@@ -7,7 +7,7 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <AssemblyName>VramRipperdoc</AssemblyName>
     <RootNamespace>VramRipperdoc</RootNamespace>
-    <Version>0.2.3</Version>
+    <Version>0.2.4</Version>
     <InvariantGlobalization>true</InvariantGlobalization>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <SelfContained>true</SelfContained>

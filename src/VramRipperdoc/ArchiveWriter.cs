@@ -35,7 +35,7 @@ public sealed class ArchiveWriter : IDisposable
             if (_data == null)
             {
                 Directory.CreateDirectory(_workDir);
-                _tempPath = Path.Combine(_workDir, $"RipperDoc-{Guid.NewGuid():N}.part");
+                _tempPath = Path.Combine(_workDir, $"RipperDoc-{Guid.NewGuid():N}.ripperdoc-tmp"); // not ".part": Windows labels that a partial download
                 _data = new FileStream(_tempPath, FileMode.CreateNew, FileAccess.ReadWrite, FileShare.None, 1 << 20);
                 _data.Write(new byte[0xAC]);
             }
