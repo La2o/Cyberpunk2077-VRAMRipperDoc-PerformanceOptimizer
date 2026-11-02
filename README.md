@@ -21,7 +21,11 @@ Then it:
 
 The scan is **read-only**. The only thing that ever writes to your game folder is `--make-budget-archive`, which adds one extra file and never modifies your mods. Delete that file and everything is back as it was.
 
+**Download:** [Nexus Mods](https://www.nexusmods.com/cyberpunk2077/mods/36878) or [GitHub releases](https://github.com/La2o/Cyberpunk2077-VRAMRipperDoc-PerformanceOptimizer/releases).
+
 See [COMPARISON.md](COMPARISON.md) for how this differs from Ultra+, FrameFlow, RedProfiler, Universal Texture Downscaler and others.
+
+![VRAM RipperDoc report](docs/report.png)
 
 ## Install
 
