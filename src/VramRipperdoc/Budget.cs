@@ -60,22 +60,29 @@ public sealed record PlanStep(ModReport Mod, AssetInfo Asset, int Halvings, long
 public sealed class BudgetPlan
 {
     public long Budget;
+    /// <summary>VRAM mods add during normal play (replaced game files and what they pull in).</summary>
     public long Current;
+    /// <summary>VRAM of new items (clothing, cars, props) that only load when used.</summary>
+    public long WhenUsed;
     public long AfterPlan;
+    public bool IncludeNew;
+    public long NewItemSaves;
     public List<PlanStep> Steps = new();
     public List<(ModReport Mod, long Saves, int Count)> PerMod = new();
     public bool Reachable => AfterPlan <= Budget;
 
     /// <summary>
-    /// Greedy plan: repeatedly halve the resolution of whichever texture saves the most VRAM
-    /// (each halving removes ~75% of it), never below 1024 px. Textures in mods are only
-    /// suggested here; originals are never touched.
+    /// Greedy plan over always-loaded textures: repeatedly halve whichever saves the most VRAM
+    /// (each halving removes ~75% of it), never below 1024 px, until the budget fits.
+    /// With <paramref name="includeNew"/>, new items' 4K+ textures are also halved once (to 2K):
+    /// they only cost VRAM while used, so they never count against the budget itself.
+    /// Original archives are never touched; the plan is applied as a separate archive.
     /// </summary>
-    public static BudgetPlan Build(ScanResult r, long budget)
+    public static BudgetPlan Build(ScanResult r, long budget, bool includeNew = false)
     {
-        var plan = new BudgetPlan { Budget = budget, Current = r.TotalDelta };
+        var plan = new BudgetPlan { Budget = budget, Current = r.AlwaysDelta, WhenUsed = r.WhenUsedDelta, IncludeNew = includeNew };
         long current = plan.Current;
-        var candidates = r.Mods.SelectMany(m => m.Assets.Where(a => a.Kind == AssetKind.Texture && a.ShadowedBy == null && a.MaxDim >= 2048 && a.DeltaGpu > 0)
+        var candidates = r.Mods.SelectMany(m => m.Assets.Where(a => a.Kind == AssetKind.Texture && a.Loads && a.AlwaysLoaded && a.MaxDim >= 2048 && a.DeltaGpu > 0)
             .Select(a => (Mod: m, Asset: a))).ToList();
         var state = candidates.ToDictionary(c => c.Asset, c => (c.Mod, Halvings: 0, Gpu: c.Asset.GpuBytes));
         var pq = new PriorityQueue<AssetInfo, long>();
@@ -95,6 +102,16 @@ public sealed class BudgetPlan
         }
         foreach (var (asset, s) in state.Where(kv => kv.Value.Halvings > 0))
             plan.Steps.Add(new PlanStep(s.Mod, asset, s.Halvings, asset.GpuBytes - s.Gpu));
+
+        if (includeNew)
+            foreach (var m in r.Mods)
+                foreach (var a in m.Assets.Where(a => a.Kind == AssetKind.Texture && a.Loads && !a.AlwaysLoaded && a.MaxDim >= 4096))
+                {
+                    long save = a.GpuBytes * 3 / 4;
+                    plan.Steps.Add(new PlanStep(m, a, 1, save));
+                    plan.NewItemSaves += save;
+                }
+
         plan.Steps = plan.Steps.OrderByDescending(p => p.Saves).ToList();
         plan.PerMod = plan.Steps.GroupBy(p => p.Mod).Select(g => (g.Key, g.Sum(x => x.Saves), g.Count())).OrderByDescending(x => x.Item2).ToList();
         plan.AfterPlan = current;

@@ -29,6 +29,13 @@ public sealed class AssetInfo
     /// <summary>Hard references (CR2W imports) this file adds that the vanilla version didn't have.</summary>
     public List<string> NewImports = new();
     public List<string> MissingImports = new();
+    /// <summary>Hashes of every file this one points to (imports + paths in embedded buffers).</summary>
+    public List<ulong> RefHashes = new();
+    /// <summary>
+    /// Loaded during normal play: replaces a game file, or is pulled in by one (e.g. a new texture used by a
+    /// replaced material). Everything else (new clothing, cars, props) only costs VRAM when it is used.
+    /// </summary>
+    public bool AlwaysLoaded;
     public List<string> Flags = new();
 
     /// <summary>VRAM this asset adds compared to running without the mod.</summary>
@@ -54,6 +61,8 @@ public sealed class ModReport
     public List<AssetInfo> Assets = new();
 
     public long GpuDelta => Assets.Sum(a => a.DeltaGpu);
+    public long AlwaysDelta => Assets.Where(a => a.AlwaysLoaded).Sum(a => a.DeltaGpu);
+    public long WhenUsedDelta => Assets.Where(a => !a.AlwaysLoaded).Sum(a => a.DeltaGpu);
     public long TextureDelta => Assets.Where(a => a.Kind == AssetKind.Texture).Sum(a => a.DeltaGpu);
     public long MeshDelta => Assets.Where(a => a.Kind == AssetKind.Mesh).Sum(a => a.DeltaGpu);
     public int Textures => Assets.Count(a => a.Kind == AssetKind.Texture);
@@ -80,6 +89,8 @@ public sealed class ScanResult
     public List<string> HistoryDiff = new();
     public TimeSpan Elapsed;
     public long TotalDelta => Mods.Sum(m => m.GpuDelta);
+    public long AlwaysDelta => Mods.Sum(m => m.AlwaysDelta);
+    public long WhenUsedDelta => Mods.Sum(m => m.WhenUsedDelta);
 }
 
 public sealed class ScanOptions
@@ -91,6 +102,8 @@ public sealed class ScanOptions
     public string? Mo2Instance;
     public bool CompareVanilla = true;
     public Action<string>? Log;
+    /// <summary>Called as archives finish: (done, total).</summary>
+    public Action<int, int>? Progress;
 }
 
 public sealed record ArchiveSource(string Path, string Source, string? Package = null, int? NexusId = null, string? Manager = null);
@@ -168,13 +181,14 @@ public sealed class Scanner
         if (!res.OodleLoaded) Log("! Oodle not found (bin/x64/oo2ext_7_win64.dll): sizes only, no texture/mesh details.");
 
         if (_o.HashList != null) LoadHashList(_o.HashList);
-        if (_o.CompareVanilla) res.BaseFileCount = LoadBaseIndex();
+        if (_o.CompareVanilla) { Log("Reading the game's own file list (a few seconds)..."); res.BaseFileCount = LoadBaseIndex(); }
 
         var managers = ModManagers.Detect(_o.GameDir, modRoot, _o.Mo2Instance, Log);
         res.ManagerNotes = managers.Notes;
         var order = DiscoverLoadOrder(modRoot, managers.ExtraArchives);
         res.BudgetArchive = BudgetArchive.FindExisting(modRoot);
-        Log($"Found {order.Count} mod archive(s).");
+        Log($"Found {order.Count} mod archive(s)." + (order.Count > 300 ? " Big mod lists take a few minutes; progress is shown below." : ""));
+        int done = 0;
         var mods = new ModReport[order.Count];
         var archives = new RdarArchive?[order.Count];
 
@@ -197,6 +211,7 @@ public sealed class Scanner
                 foreach (var e in a.Entries) mr.Assets.Add(Analyze(a, e));
             }
             catch (Exception ex) { mr.Error = ex.Message; }
+            _o.Progress?.Invoke(Interlocked.Increment(ref done), order.Count);
         });
 
         // Conflicts: the first archive in load order that contains a hash wins; later copies never load.
@@ -207,6 +222,20 @@ public sealed class Scanner
                 if (winner.TryGetValue(a.Hash, out var w)) { a.ShadowedBy = w.Name; a.Flags.Add($"never loads: {w.Name} wins this file"); }
                 else winner[a.Hash] = m;
             }
+
+        // Always loaded = replaces a game file, or is reachable from one through references
+        // (a replaced material pointing at a new texture). New items reached only from ArchiveXL /
+        // TweakXL definitions load when worn, spawned or visited.
+        var loadedByHash = mods.SelectMany(m => m.Assets).Where(a => a.Loads).ToDictionary(a => a.Hash);
+        var queue = new Queue<AssetInfo>(loadedByHash.Values.Where(a => a.OverridesBase));
+        foreach (var a in queue) a.AlwaysLoaded = true;
+        while (queue.TryDequeue(out var cur))
+            foreach (var h in cur.RefHashes)
+                if (loadedByHash.TryGetValue(h, out var next) && !next.AlwaysLoaded)
+                {
+                    next.AlwaysLoaded = true;
+                    queue.Enqueue(next);
+                }
 
         ScanTextReferences(modRoot);
         var dynamicArchives = ArchivesWithDynamicXl(modRoot);
@@ -329,12 +358,13 @@ public sealed class Scanner
         return set;
     }
 
-    void AddReference(string path)
+    ulong AddReference(string path)
     {
         var p = path.Replace('/', '\\').TrimStart('\\');
         var h = Fnv1a64.Hash(p);
         _referenced.TryAdd(h, 0);
         _names.TryAdd(h, p);
+        return h;
     }
 
     AssetInfo Analyze(RdarArchive a, ArchiveEntry e)
@@ -383,14 +413,14 @@ public sealed class Scanner
         if (collectNames)
         {
             foreach (var imp in c.Imports)
-                if (imp.Length > 0) AddReference(imp);
+                if (imp.Length > 0) info.RefHashes.Add(AddReference(imp));
             // Meshes, appearances and entities keep more references in small embedded buffers.
             if (c.RootClass != "CBitmapTexture" && c.RootClass != "CTextureArray")
                 foreach (var s in a.SegmentsOf(e).Skip(1).Where(s => s.Size <= 1 << 20))
                     try
                     {
                         var buf = a.ReadSegment(s);
-                        if (buf != null) foreach (Match m in PathRx.Matches(Encoding.Latin1.GetString(buf))) AddReference(m.Value);
+                        if (buf != null) foreach (Match m in PathRx.Matches(Encoding.Latin1.GetString(buf))) info.RefHashes.Add(AddReference(m.Value));
                     }
                     catch { }
         }

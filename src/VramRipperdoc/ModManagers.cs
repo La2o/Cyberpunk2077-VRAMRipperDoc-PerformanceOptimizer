@@ -59,6 +59,9 @@ public sealed class ModManagers
         if (n > 0) Notes.Add($"Vortex: matched {n} archive(s) to installed mods.");
     }
 
+    /// <summary>Every Cyberpunk 2077 MO2 instance in the default location, whatever game path it points at.</summary>
+    public static List<string> AllMo2Instances() => FindMo2Instances("");
+
     static List<string> FindMo2Instances(string gameDir)
     {
         var list = new List<string>();

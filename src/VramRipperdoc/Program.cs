@@ -6,20 +6,22 @@ using VramRipperdoc;
 const string Usage = """
 VRAM RipperDoc - Performance Optimizer
 Ranks your Cyberpunk 2077 asset mods by the VRAM and geometry they add, and plans a budget.
+Most players only need the double-click shortcuts next to this exe (see START HERE.txt).
 
 Usage: VramRipperdoc [options]
  Scan (default, read-only)
   --game <dir>              Cyberpunk 2077 folder (auto-detected for Steam/GOG/Epic, or when run from inside it)
-  --budget <GB>             VRAM your mods may add (default: from your GPU and in-game settings)
+  --budget <GB>             VRAM your mods may add during normal play (default: from your GPU and in-game settings)
   --out <dir>               Where to write reports (default: next to the exe)
-  --mo2 <instance dir>      Read mods from a Mod Organizer 2 instance (auto-detected when possible)
+  --mo2 <instance dir>      Read mods from a Mod Organizer 2 instance (auto-detected, or asked for once)
   --hashes <file>           Optional list of depot paths (e.g. WolvenKit's archivehashes.csv) for nicer names
   --top <n>                 Rows to show in the console (default 25)
   --no-vanilla              Skip comparing against the base game archives (faster, less accurate)
-  --no-open                 Don't open the HTML report when done
+  --no-open                 Don't open the HTML report (or Explorer) when done
   --json                    Print the JSON report to stdout instead of the table
  Apply the plan (optional)
   --make-budget-archive     Write ONE extra archive with the planned textures halved (your mods are untouched)
+  --include-new-items       Also halve 4K+ textures of new clothing, cars and props (they only cost VRAM while used)
   --remove-budget-archive   Delete it again
  Measure real VRAM
   --live [--label <name>] [--seconds <n>]   Record the game's actual VRAM use while you play (Ctrl+C to stop)
@@ -29,7 +31,7 @@ Usage: VramRipperdoc [options]
 """;
 
 var flags = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-    { "no-vanilla", "no-open", "json", "help", "pause", "make-budget-archive", "remove-budget-archive", "live", "share" };
+    { "no-vanilla", "no-open", "json", "help", "pause", "make-budget-archive", "include-new-items", "remove-budget-archive", "live", "share", "ask-mo2" };
 var opts = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
 for (int i = 0; i < args.Length; i++)
 {
@@ -70,7 +72,8 @@ var modRoot = opts.GetValueOrDefault("mod-root") ?? game;
 
 if (opts.ContainsKey("remove-budget-archive"))
 {
-    if (!BudgetArchive.Remove(modRoot)) Console.WriteLine("No budget archive found.");
+    if (BudgetArchive.Remove(modRoot)) Console.WriteLine("The budget fix was removed. Everything is back as it was.");
+    else Console.WriteLine("No budget fix found, so there was nothing to remove." + (UnderMo2() ? "" : " (If you applied it through MO2, delete it from MO2's Overwrite folder.)"));
     return 0;
 }
 if (opts.ContainsKey("live"))
@@ -78,18 +81,58 @@ if (opts.ContainsKey("live"))
         int.TryParse(opts.GetValueOrDefault("seconds"), out var secs) ? secs : 0, outDir, BudgetArchive.FindExisting(modRoot) != null);
 
 Log($"VRAM RipperDoc v{Report.Version} - scanning {game}");
+bool interactive = !quiet && (!Console.IsInputRedirected || opts.ContainsKey("ask-mo2")); // --ask-mo2: test hook
+
+// Remember an MO2 folder the user gave us once, so the shortcuts keep working.
+var settingsFile = Path.Combine(AppContext.BaseDirectory, "RipperDoc.ini");
+var mo2 = opts.GetValueOrDefault("mo2") ?? ReadSetting(settingsFile, "mo2");
+
+int lastPct = -1;
+var progressLock = new object();
+void ShowProgress(int done, int total)
+{
+    lock (progressLock)
+    {
+        if (quiet || total < 20) return;
+        int pct = done * 100 / total;
+        if (pct == lastPct && done != total) return;
+        lastPct = pct;
+        Console.Error.Write($"\r  Scanning mods: {done:N0} / {total:N0} ({pct}%)   ");
+        if (done == total) Console.Error.WriteLine();
+    }
+}
+
+ScanResult Scan(string? mo2Instance) => new Scanner(new ScanOptions
+{
+    GameDir = game,
+    ModRoot = opts.GetValueOrDefault("mod-root"),
+    HashList = opts.GetValueOrDefault("hashes"),
+    Mo2Instance = mo2Instance,
+    CompareVanilla = !opts.ContainsKey("no-vanilla"),
+    Log = Log,
+    Progress = ShowProgress,
+}).Scan();
+
 ScanResult result;
 try
 {
-    result = new Scanner(new ScanOptions
+    result = Scan(mo2);
+    // Nothing found in the game folder: MO2 keeps mods outside it. Ask once, then remember.
+    if (result.Mods.Count == 0 && mo2 == null && interactive && opts.GetValueOrDefault("mod-root") == null && !UnderMo2())
     {
-        GameDir = game,
-        ModRoot = opts.GetValueOrDefault("mod-root"),
-        HashList = opts.GetValueOrDefault("hashes"),
-        Mo2Instance = opts.GetValueOrDefault("mo2"),
-        CompareVanilla = !opts.ContainsKey("no-vanilla"),
-        Log = Log,
-    }).Scan();
+        var picked = AskForMo2();
+        if (picked != null)
+        {
+            lastPct = -1;
+            result = Scan(picked);
+            if (result.Mods.Count > 0)
+            {
+                WriteSetting(settingsFile, "mo2", picked);
+                Console.WriteLine("Saved: next time your MO2 mods are found automatically.");
+            }
+            else Console.WriteLine("No mods found there either. Pick the folder that contains ModOrganizer.ini.");
+        }
+    }
 }
 catch (Exception ex)
 {
@@ -105,7 +148,7 @@ if (opts.TryGetValue("budget", out var b) && double.TryParse(b, System.Globaliza
     result.BudgetWhy = "set with --budget";
 }
 else (budget, result.BudgetWhy) = GpuInfo.SuggestBudget(result.Gpu?.VramBytes ?? 8L << 30, result.Settings);
-var plan = BudgetPlan.Build(result, budget);
+var plan = BudgetPlan.Build(result, budget, includeNew: opts.ContainsKey("include-new-items"));
 
 if (opts.TryGetValue("community", out var communitySource) && communitySource != null)
     Community.Annotate(result, Community.Load(communitySource, Log));
@@ -119,21 +162,42 @@ if (quiet)
 
 Directory.CreateDirectory(outDir);
 result.HistoryDiff = History.SaveAndDiff(result, outDir);
-Report.PrintConsole(result, plan, int.TryParse(opts.GetValueOrDefault("top"), out var top) ? top : 25);
+bool makingFix = opts.ContainsKey("make-budget-archive");
+if (!makingFix) Report.PrintConsole(result, plan, int.TryParse(opts.GetValueOrDefault("top"), out var top) ? top : 25);
 
-if (opts.ContainsKey("make-budget-archive"))
+string? openAfter = null;
+if (makingFix)
 {
     Console.WriteLine();
-    if (plan.Steps.Count == 0) Console.WriteLine("Budget archive: nothing to do (already within budget, or no texture over 2K to halve).");
+    Console.WriteLine(new string('=', 72));
+    if (plan.Steps.Count == 0)
+    {
+        Console.WriteLine(plan.Current <= plan.Budget
+            ? "Nothing to fix: during normal play your mods already fit your VRAM budget."
+            : "Nothing to fix: none of your mods' textures are big enough to halve (2K or larger).");
+        if (!plan.IncludeNew && result.WhenUsedDelta > 0)
+            Console.WriteLine("New clothing, cars and props were left alone. Run the fix again and answer Y to the second question to shrink their 4K textures too.");
+    }
     else
     {
         var outcome = BudgetArchive.Build(result, plan, modRoot, Log);
-        Console.WriteLine($"Budget archive: {outcome.Path}");
-        Console.WriteLine($"  {outcome.Textures} texture(s) halved, ~{Report.Size(outcome.SavedBytes)} less VRAM when they are on screen.");
-        foreach (var s in outcome.Skipped.Take(10)) Console.WriteLine($"  skipped {s}");
-        Console.WriteLine("  Undo: delete that file, or run with --remove-budget-archive.");
         result.BudgetArchive = outcome.Path;
+        Console.WriteLine($"DONE: {outcome.Textures} texture(s) halved, saving up to {Report.Size(outcome.SavedBytes)} of VRAM.");
+        Console.WriteLine();
+        Console.WriteLine("The fix is ONE new file (your mods were not changed):");
+        Console.WriteLine($"  {outcome.Path}");
+        if (UnderMo2())
+        {
+            Console.WriteLine();
+            Console.WriteLine("You ran this through Mod Organizer 2, so MO2 put the new file in its \"Overwrite\" folder.");
+            Console.WriteLine("That works as is. To keep it tidy: in MO2 right-click Overwrite > Create mod, and keep that mod enabled.");
+        }
+        if (outcome.Skipped.Count > 0) Console.WriteLine($"({outcome.Skipped.Count} texture(s) were skipped because their format can't be shrunk safely.)");
+        Console.WriteLine();
+        Console.WriteLine("Start the game as usual. To undo, double-click \"Undo budget fix.bat\".");
+        openAfter = outcome.Path;
     }
+    Console.WriteLine(new string('=', 72));
 }
 
 if (opts.ContainsKey("share"))
@@ -152,7 +216,13 @@ File.WriteAllText(Path.Combine(outDir, "VRAM-RipperDoc-Summary.md"), Summary.Mar
 Console.WriteLine();
 Console.WriteLine($"Report: {html}");
 if (!opts.ContainsKey("no-open") && OperatingSystem.IsWindows())
-    try { Process.Start(new ProcessStartInfo(html) { UseShellExecute = true }); } catch { }
+    try
+    {
+        // After a fix, show the new file in Explorer; after a scan, open the report.
+        if (openAfter != null && File.Exists(openAfter)) Process.Start("explorer.exe", $"/select,\"{openAfter}\"");
+        else if (!makingFix) Process.Start(new ProcessStartInfo(html) { UseShellExecute = true });
+    }
+    catch { }
 Pause();
 return 0;
 
@@ -160,6 +230,55 @@ void Pause()
 {
     // Double-clicked (no args): keep the window open so the summary can be read.
     if ((args.Length == 0 || opts.ContainsKey("pause")) && !Console.IsInputRedirected) { Console.WriteLine("Press any key to close."); Console.ReadKey(true); }
+}
+
+string? AskForMo2()
+{
+    Console.WriteLine();
+    Console.WriteLine("No mods were found in your game folder.");
+    var found = ModManagers.AllMo2Instances();
+    if (found.Count > 0)
+    {
+        Console.WriteLine("If you use Mod Organizer 2, pick your setup:");
+        for (int i = 0; i < found.Count; i++) Console.WriteLine($"  {i + 1}) {found[i]}");
+        Console.Write("Type its number, paste a different MO2 folder, or press Enter to skip: ");
+    }
+    else Console.Write("If you use Mod Organizer 2, paste the folder that contains ModOrganizer.ini (or press Enter to skip): ");
+    var answer = Console.ReadLine()?.Trim().Trim('"');
+    if (string.IsNullOrEmpty(answer)) return null;
+    if (int.TryParse(answer, out var n) && n >= 1 && n <= found.Count) return found[n - 1];
+    if (File.Exists(answer) && Path.GetFileName(answer).Equals("ModOrganizer.ini", StringComparison.OrdinalIgnoreCase)) answer = Path.GetDirectoryName(answer)!;
+    return Directory.Exists(answer) ? answer : null;
+}
+
+// MO2 runs tools through its virtual file system (usvfs); new files then land in "Overwrite".
+static bool UnderMo2()
+{
+    try { return Process.GetCurrentProcess().Modules.Cast<ProcessModule>().Any(m => m.ModuleName.StartsWith("usvfs", StringComparison.OrdinalIgnoreCase)); }
+    catch { return false; }
+}
+
+static string? ReadSetting(string file, string key)
+{
+    try
+    {
+        if (!File.Exists(file)) return null;
+        var line = File.ReadAllLines(file).FirstOrDefault(l => l.StartsWith(key + "=", StringComparison.OrdinalIgnoreCase));
+        var v = line?[(key.Length + 1)..].Trim();
+        return string.IsNullOrEmpty(v) ? null : v;
+    }
+    catch { return null; }
+}
+
+static void WriteSetting(string file, string key, string value)
+{
+    try
+    {
+        var lines = File.Exists(file) ? File.ReadAllLines(file).Where(l => !l.StartsWith(key + "=", StringComparison.OrdinalIgnoreCase)).ToList() : new List<string>();
+        lines.Add($"{key}={value}");
+        File.WriteAllLines(file, lines);
+    }
+    catch { }
 }
 
 static string? FindGame(string? hint)

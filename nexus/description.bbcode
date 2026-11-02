@@ -2,13 +2,13 @@
 [size=3]Stuttering with a lot of texture or clothing mods? This shows you [b]which mods use up your graphics card's memory (VRAM)[/b], and can shrink just the heaviest textures with one double-click. Your mods are never changed.[/size]
 
 [size=4][b]Who it's for[/b][/size]
-Players with an [b]8–16 GB graphics card[/b] and lots of texture, clothing, character or environment mods. When VRAM runs out you get stutter, blurry textures popping in, or crashes. If you're not short on VRAM this won't raise your FPS, but the report still finds broken and useless files.
+Anyone with lots of texture, clothing, character, vehicle or environment mods. It matters most on [b]8–16 GB cards[/b], but big 4K texture packs can fill even a [b]24 GB[/b] card. When VRAM runs out you get stutter, blurry textures popping in, or crashes. If you're not short on VRAM this won't raise your FPS, but the report still finds broken and useless files.
 
 [size=4][b]Quick start (3 double-clicks)[/b][/size]
 After installing, open [i]Cyberpunk 2077\tools\VRAM RipperDoc\[/i] and double-click:
 [list=1]
-[*][b]1 - Scan my mods.bat[/b]: checks every texture and mesh mod and opens a report in your browser. Changes nothing.
-[*][b]2 - Apply budget fix.bat[/b] [i](optional)[/i]: if the report says you're over budget, this adds [b]one extra file[/b] with half-size copies of only your heaviest textures. Your mods stay exactly as they are.
+[*][b]1 - Scan my mods.bat[/b]: checks every texture and mesh mod and opens a report in your browser. Changes nothing. With a big mod list this takes a few minutes; a progress counter shows how far it is. Using Mod Organizer 2? If no mods are found, it asks for your MO2 folder once and remembers it.
+[*][b]2 - Apply budget fix.bat[/b] [i](optional)[/i]: if the report says you're over budget, this adds [b]one extra file[/b] with half-size copies of only your heaviest textures. It asks first, then asks whether to also shrink the 4K textures of new clothing, cars and props. When it's done it says what it did and shows the new file in Explorer. Your mods stay exactly as they are.
 [*][b]3 - Measure VRAM in game.bat[/b] [i](optional)[/i]: records how much VRAM the game really uses while you play. Run it once named "before" and once named "after" (same save, same spot) to see what changed.
 [/list]
 Changed your mind? Double-click [b]Undo budget fix.bat[/b] and everything is back as it was.
@@ -25,7 +25,8 @@ Changed your mind? Double-click [b]Undo budget fix.bat[/b] and everything is bac
 
 [size=4][b]Reading the report[/b][/size]
 [list]
-[*]Mods at the top of the table cost the most VRAM. Click a mod to see its heaviest files.
+[*]Each mod gets two numbers. [b]Normal play[/b] is the extra VRAM it adds because it replaces game files, so it's loaded whenever those things are on screen; this is what counts against your budget. [b]When used[/b] is for new clothing, cars, weapons and props, which only take VRAM while you wear, drive or spawn them.
+[*]Mods at the top of the table cost the most during normal play. Click a mod to see its heaviest files.
 [*][color=#ff4d6d]Red numbers[/color] are worth a look: flags, missing files, or being over budget.
 [*]Over budget? The simplest fix is often the [b]1K or 2K version[/b] of a big texture mod, if the author offers one. Otherwise use [b]2 - Apply budget fix[/b].
 [*]Need help with a crash or stutter? Click [b]Copy summary for a support post[/b] and paste it into your post.
@@ -46,8 +47,20 @@ Only the textures the fix shrinks, and only to half size. That's the same smalle
 [b]How much VRAM will I save?[/b]
 It depends on your mods and what's on screen. The report estimates the maximum; [b]3 - Measure VRAM in game[/b] shows the real number. In our test with [i]no texture mods at all[/i] (the worst case for this tool), halving 360 of the game's own textures saved about 120 MB at one spot in the Badlands. Heavy texture modlists have far more to trim.
 
+[b]My "When used" total is huge (hundreds of GB). Is my game about to explode?[/b]
+No. That's every piece of clothing, every car and every prop you have installed, added up as if you used all of them at the same moment, which never happens. The game only loads the ones you're wearing, driving or looking at. That's why only [b]Normal play[/b] counts against your budget.
+
+[b]Where is the fix file? I can't find it.[/b]
+After [b]2 - Apply budget fix[/b] finishes, it opens Explorer with the new file selected: [i]archive\pc\mod\!RipperDoc_Budget.archive[/i]. If it says "Nothing to fix", your mods already fit (answer Y to the second question to shrink new items' 4K textures anyway). If you run it through Mod Organizer 2, MO2 puts the file in its [i]Overwrite[/i] folder; that works, or right-click Overwrite > Create mod to keep it tidy.
+
+[b]The scan seems stuck / nothing opens.[/b]
+Big mod lists (thousands of archives) take a few minutes. Watch the "Scanning mods: X / Y" counter. The report opens in your browser when it's done, and is also saved as [i]VRAM-RipperDoc-Report.html[/i] next to the tool.
+
 [b]Does it work with Mod Organizer 2?[/b]
-Yes. It looks for your MO2 setup automatically. If your MO2 mods don't show up in the report, run [i]VramRipperdoc.exe --mo2 "path to your MO2 instance"[/i].
+Yes. It looks for your MO2 setup automatically. If no mods are found, [b]1 - Scan my mods[/b] asks for your MO2 folder (the one with ModOrganizer.ini) once and remembers it. You can also run it from inside MO2 as an executable.
+
+[b]Why does a car or mirror mod use so much?[/b]
+The numbers are the mod's own textures and 3D models. Vehicle mods often ship 4K textures for every part, which adds up fast. Click the mod in the report to see exactly which files are heavy.
 
 [b]Will it raise my FPS?[/b]
 Only if you're running out of VRAM, which shows up as stutter and textures loading late. If you have plenty to spare, it won't change your FPS.

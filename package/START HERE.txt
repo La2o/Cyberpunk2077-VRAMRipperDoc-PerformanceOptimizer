@@ -6,10 +6,15 @@ Double-click the numbered files in order:
   1 - Scan my mods.bat
       Checks every texture and mesh mod you have installed and opens a report
       in your browser. The heaviest mods are at the top. Changes nothing.
+      Big mod lists can take a few minutes; a progress counter shows how far it is.
+      Using Mod Organizer 2? If no mods are found it asks for your MO2 folder once.
 
   2 - Apply budget fix.bat   (optional)
       If the report says you are over budget, this adds ONE extra file with
       half-size copies of only the heaviest textures. Your mods are not changed.
+      It asks a second question: whether to also shrink 4K textures of new
+      clothing, cars and props (they only use VRAM while you use them).
+      When it is done, it shows the new file in Explorer.
 
   3 - Measure VRAM in game.bat   (optional)
       Records how much video memory the game really uses while you play.

@@ -81,7 +81,8 @@ Everything is also available from the command line:
 
 | Column | Meaning |
 |---|---|
-| **+VRAM** | Estimated GPU memory this archive adds if everything in it is on screen. Negative means it is lighter than vanilla. |
+| **Normal play** | Extra GPU memory during normal play: files that replace game files, plus new files those replaced files point to. This is what the budget is compared against. Negative means lighter than vanilla. |
+| **When used** | New clothing, cars, weapons and props. They only take VRAM while worn, driven or spawned, so this total never loads at once and is not counted against the budget. |
 | **Tex / Mesh** | Texture and mesh counts in the archive |
 | **Tris LOD0** | Triangles at full detail, summed over meshes that actually load |
 | **Overrides** | Files that replace a vanilla file |

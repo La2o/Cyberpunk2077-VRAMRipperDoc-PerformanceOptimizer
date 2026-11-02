@@ -49,7 +49,7 @@ public static class Fixtures
         for (int i = 0; i < 4 && i < big.Count; i++) na.Add(src, big[^(i + 1)], Fnv1a64.Hash($@"mymod\textures\new_{i}.xbm"));
         na.Write(Path.Combine(modDir, "NewOutfit.archive"));
         // Cooked 2K+ textures under new paths: something for the budget plan to halve.
-        var huge = new ArchiveWriter(); int hugeCount = 0;
+        var huge = new ArchiveWriter(); int hugeCount = 0; ArchiveEntry? firstHuge = null;
         foreach (var e in src.Entries)
         {
             if (hugeCount >= 6) break;
@@ -62,6 +62,7 @@ public static class Fixtures
             int bi = c.Exports.FindIndex(x => x.ClassName == "rendRenderTextureBlobPC");
             if (bi < 0 || c.ReadExport(bi).Get("header") is not Dictionary<string, object?> h || h.Get("sizeInfo") is not Dictionary<string, object?> si) continue;
             if (Convert.ToInt32(si.Get("width") ?? 0) < 2048) continue;
+            firstHuge ??= e;
             huge.Add(src, e, Fnv1a64.Hash($@"hugemod\textures\t{hugeCount++}.xbm"));
         }
         huge.Write(Path.Combine(modDir, "HugeTextures.archive"));
@@ -82,6 +83,15 @@ public static class Fixtures
             bw.Add(new WriteEntry(meshWithTex.Hash, meshWithTex.Timestamp, meshWithTex.NumInlineBufferSegments, raw, Array.Empty<ulong>(),
                 ArchiveWriter.FileSha1(head, segs.Skip(1).Select(s => src.ReadRaw(s)))));
             bw.Write(Path.Combine(modDir, "#BrokenRef.archive"));
+
+            // An environment-style retexture: a replaced file that points at a NEW texture path.
+            // The new texture must count as "normal play" (always loaded), not as a new item.
+            var newPath = Encoding.UTF8.GetString(head, pos, target.Length);
+            var rp = new ArchiveWriter();
+            rp.Add(new WriteEntry(meshWithTex.Hash, meshWithTex.Timestamp, meshWithTex.NumInlineBufferSegments, raw, Array.Empty<ulong>(),
+                ArchiveWriter.FileSha1(head, segs.Skip(1).Select(s => src.ReadRaw(s)))));
+            rp.Add(src, firstHuge ?? big[0], Fnv1a64.Hash(newPath));
+            rp.Write(Path.Combine(outRoot, "retexture", "archive", "pc", "mod", "RetexturePack.archive"));
         }
 
         // Vortex deployment manifest + an MO2 instance, as those managers write them.

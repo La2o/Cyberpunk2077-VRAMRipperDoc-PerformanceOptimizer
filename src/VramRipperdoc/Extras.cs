@@ -58,15 +58,15 @@ public static class Summary
     public static string Markdown(ScanResult r, BudgetPlan plan)
     {
         var sb = new StringBuilder();
-        sb.AppendLine($"**VRAM RipperDoc v{Report.Version}** · {r.Mods.Count} archive mods · est. **{Report.Size(r.TotalDelta)}** added VRAM");
+        sb.AppendLine($"**VRAM RipperDoc v{Report.Version}** · {r.Mods.Count} archive mods · **{Report.Size(r.AlwaysDelta)}** extra in normal play · {Report.Size(r.WhenUsedDelta)} in new items (only when used)");
         if (r.Gpu != null) sb.AppendLine($"GPU: {r.Gpu.Name} ({Report.Size(r.Gpu.VramBytes)})" + (r.Settings != null ? $" · {r.Settings.Describe()}" : ""));
         sb.AppendLine($"Budget: {Report.Size(plan.Budget)} → {(plan.Current <= plan.Budget ? "within budget" : $"over by {Report.Size(plan.Current - plan.Budget)}")}");
         if (r.BudgetArchive != null) sb.AppendLine($"Budget archive active: `{Path.GetFileName(r.BudgetArchive)}`");
         sb.AppendLine();
-        sb.AppendLine("| Mod | +VRAM | Tex | Mesh | Tris | Flags |");
+        sb.AppendLine("| Mod | Normal play | When used | Tex | Mesh | Flags |");
         sb.AppendLine("|---|---:|---:|---:|---:|---:|");
-        foreach (var m in r.Mods.Where(m => m.Error == null).OrderByDescending(m => m.GpuDelta).Take(10))
-            sb.AppendLine($"| {m.Package ?? m.Name} | {Report.Size(m.GpuDelta)} | {m.Textures} | {m.Meshes} | {m.Tris0:N0} | {m.FlagCount} |");
+        foreach (var m in r.Mods.Where(m => m.Error == null).OrderByDescending(m => m.AlwaysDelta).ThenByDescending(m => m.GpuDelta).Take(10))
+            sb.AppendLine($"| {m.Package ?? m.Name} | {Report.Size(m.AlwaysDelta)} | {Report.Size(m.WhenUsedDelta)} | {m.Textures} | {m.Meshes} | {m.FlagCount} |");
         var broken = r.Mods.Where(m => m.Error != null).ToList();
         if (broken.Count > 0) sb.AppendLine().AppendLine("**Broken archives:** " + string.Join(", ", broken.Select(b => $"`{b.Name}`")));
         var missing = r.Mods.Where(m => m.Missing > 0).ToList();
