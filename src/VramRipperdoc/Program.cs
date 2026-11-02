@@ -32,7 +32,7 @@ Usage: VramRipperdoc [options]
 """;
 
 var flags = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-    { "no-vanilla", "no-open", "json", "help", "pause", "make-budget-archive", "include-new-items", "remove-budget-archive", "live", "share", "ask-mo2", "ask", "stress-all" };
+    { "no-vanilla", "no-open", "json", "help", "pause", "make-budget-archive", "include-new-items", "remove-budget-archive", "live", "share", "ask-mo2", "ask", "stress-all", "test-names" };
 var opts = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
 for (int i = 0; i < args.Length; i++)
 {
@@ -65,6 +65,7 @@ if (opts.TryGetValue("ingame-test", out var ingameCount) && ingameCount != null)
     return IngameTest.Make(FindGame(opts.GetValueOrDefault("game"))!, int.Parse(ingameCount), opts.ContainsKey("copy-only"));
 if (opts.TryGetValue("make-heavy", out var heavyOut) && heavyOut != null)
     return HeavyFixture.Make(FindGame(null)!, heavyOut, int.Parse(opts.GetValueOrDefault("count") ?? "300"));
+if (opts.ContainsKey("test-names")) return NameTest.Run();
 if (opts.TryGetValue("make-fixtures", out var fixturesOut) && fixturesOut != null)
     return Fixtures.Make(FindGame(opts.GetValueOrDefault("game")) ?? throw new Exception("game not found"), fixturesOut);
 

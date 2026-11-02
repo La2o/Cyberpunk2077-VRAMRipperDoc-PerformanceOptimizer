@@ -188,3 +188,33 @@ public static class HeavyFixture
         return 0;
     }
 }
+
+/// <summary>Developer self-test for the budget archive's file name (must sort before every other archive).</summary>
+public static class NameTest
+{
+    public static int Run()
+    {
+        var cases = new List<string[]>
+        {
+            new[] { "###-PreemHair.archive", "B_Hanako.archive", "ETO_2K.archive" },
+            new[] { "!!!!!!!!Photomode.archive", "#Hair.archive" },
+            new[] { "! Hairs.archive", "basegame.archive" },          // hung v0.2.3-0.2.5
+            new[] { " LeadingSpace.archive", "!x.archive" },           // hung v0.2.3-0.2.5
+            new[] { "!!! !Weird.archive", "!!!!!!!.archive" },
+            new[] { "!RipperDoc_Budget.archive" },                    // equal name (old fix left in a list)
+            Array.Empty<string>(),
+        };
+        int bad = 0;
+        foreach (var others in cases)
+        {
+            var name = BudgetArchive.NameThatLoadsFirst(others);
+            bool ok = name.Contains(Scanner.BudgetArchiveMarker) && name.EndsWith(".archive") && others.All(o => string.CompareOrdinal(name, o) < 0);
+            // Would the v0.2.5 loop have finished? (cap at 10,000 iterations)
+            string old = $"!{Scanner.BudgetArchiveMarker}.archive"; int iter = 0;
+            while (others.Any(o => string.CompareOrdinal(o, old) <= 0) && iter < 10_000) { old = "!" + old; iter++; }
+            Console.WriteLine($"{(ok ? "OK " : "BAD")} [{string.Join(", ", others)}] -> \"{name}\"   (old loop: {(iter >= 10_000 ? "NEVER ENDS" : "ok")})");
+            if (!ok) bad++;
+        }
+        return bad == 0 ? 0 : 1;
+    }
+}

@@ -47,6 +47,9 @@ Only the textures the fix shrinks, and only to half size. That's the same smalle
 [b]How much VRAM will I save?[/b]
 It depends on your mods and what's on screen. The report estimates the maximum; [b]3 - Measure VRAM in game[/b] shows the real number. In our test with [i]no texture mods at all[/i] (the worst case for this tool), halving 360 of the game's own textures saved about 120 MB at one spot in the Badlands. Heavy texture modlists have far more to trim.
 
+[b]How do I read "Normal play" and "When used"?[/b]
+[b]Normal play[/b] is what the mod costs whenever the things it replaces are on screen. [b]When used[/b] comes [i]on top of that[/i], only while you wear, drive or spawn the mod's new items. Example: a mod showing 11 MB normal play / 1.09 GB when used costs 11 MB most of the time, and up to about 1.1 GB more while its new items are in use. A [b]negative[/b] Normal play number means the mod makes the game [i]lighter[/i] than vanilla, for example with smaller textures or by removing objects from the world.
+
 [b]My "When used" total is huge (hundreds of GB). Is my game about to explode?[/b]
 No. That's every piece of clothing, every car and every prop you have installed, added up as if you used all of them at the same moment, which never happens. The game only loads the ones you're wearing, driving or looking at. That's why only [b]Normal play[/b] counts against your budget.
 
@@ -55,7 +58,7 @@ After [b]2 - Apply budget fix[/b] finishes, it opens Explorer with the new file 
 
 [b]The scan or the fix seems stuck / nothing opens.[/b]
 Big mod lists (thousands of archives) take a few minutes. Watch the "Scanning mods: X / Y" counter, and while the fix is being written, the "Writing fix: X / Y textures" counter with time left. The report opens in your browser when it's done, and is also saved as [i]VRAM-RipperDoc-Report.html[/i] next to the tool.
-[b]Please use v0.2.5 or newer.[/b] Older versions could hang right at the end when run through Mod Organizer 2: saving the file into MO2's virtual game folder could freeze. Now MO2 users get the fix as a normal MO2 mod instead (see above). Clicking inside the black window also no longer pauses it. If it ever stops moving for a minute, it says so. Please post the [i]VRAM-RipperDoc-Fix.log[/i] file from the tool's folder in the comments so I can fix it.
+[b]Please use v0.2.6 or newer.[/b] Versions 0.2.3 to 0.2.5 could hang forever right after "all textures done" if one of your mod archives has a space (or similar character) right after its leading "!" or starts with a space, e.g. "! Hairs.archive". The tool was stuck choosing the fix file's name. That's fixed. Through Mod Organizer 2 the fix is saved as a normal MO2 mod (see above), and clicking inside the black window no longer pauses it. If it ever stops moving for a minute, it says so. Please post the [i]VRAM-RipperDoc-Fix.log[/i] file from the tool's folder in the comments so I can fix it.
 A leftover [i]RipperDoc-....ripperdoc-tmp[/i] (or older [i].part[/i]) file is an unfinished fix. Running the fix or Undo again deletes it.
 
 [b]Does it work with Mod Organizer 2?[/b]

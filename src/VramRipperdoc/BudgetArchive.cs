@@ -111,13 +111,14 @@ public static class BudgetArchive
         }
         finally
         {
+            trace?.Invoke("all textures processed; closing source archives");
             foreach (var s in sources.Values) s.A.Dispose();
         }
 
         // Load before every other archive so our smaller copies win, without renaming anyone's files.
-        var others = r.Mods.Where(m => !m.Source.StartsWith("REDmod")).Select(m => System.IO.Path.GetFileName(m.File)).ToList();
-        var name = $"!{Scanner.BudgetArchiveMarker}.archive";
-        while (others.Any(o => string.CompareOrdinal(o, name) <= 0)) name = "!" + name;
+        var others = r.Mods.Where(m => !m.Source.StartsWith("REDmod")).Select(m => System.IO.Path.GetFileName(m.File));
+        var name = NameThatLoadsFirst(others);
+        trace?.Invoke($"file name: {name}");
         var path = System.IO.Path.Combine(dir, name);
         if (writer.Count == 0) { log("Nothing to write: no plan steps could be applied."); return new Outcome(path, 0, 0, skipped.ToList()); }
         int count = writer.Count;
@@ -137,6 +138,26 @@ public static class BudgetArchive
             log($"Added {name} to the top of modlist.txt (backup: modlist.txt.ripperdoc.bak).");
         }
         return new Outcome(path, count, saved, skipped.ToList());
+    }
+
+    /// <summary>
+    /// A file name that sorts (ordinal, like the game's load order) before every name in <paramref name="others"/>.
+    /// Always terminates: copy the smallest name's leading characters up to its first one above '!',
+    /// then put '!' there. (v0.2.3–0.2.5 prepended '!' in a loop, which never ended when a mod's name
+    /// had a space or other low character right after its leading '!'s, e.g. "! Hairs.archive".)
+    /// </summary>
+    public static string NameThatLoadsFirst(IEnumerable<string> others)
+    {
+        string baseName = $"!{Scanner.BudgetArchiveMarker}.archive";
+        string? min = null;
+        foreach (var o in others)
+            if (min == null || string.CompareOrdinal(o, min) < 0) min = o;
+        if (min == null || string.CompareOrdinal(baseName, min) < 0) return baseName;
+        int i = 0;
+        while (i < min.Length && min[i] <= '!') i++;
+        if (i < min.Length) return min[..i] + baseName; // '!' at position i is lower than min[i]
+        // min is made only of characters <= '!' (not a real archive name); fall back to the lowest legal start.
+        return " " + baseName;
     }
 
     /// <summary>
