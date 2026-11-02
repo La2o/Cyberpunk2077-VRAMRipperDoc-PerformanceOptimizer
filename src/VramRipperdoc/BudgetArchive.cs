@@ -8,10 +8,11 @@ public static class BudgetArchive
 {
     public sealed record Outcome(string Path, int Textures, long SavedBytes, List<string> Skipped);
 
-    public static string? FindExisting(string modRoot)
+    public static string? FindExisting(string modRoot, string? extraDir = null)
     {
-        var dir = System.IO.Path.Combine(modRoot, "archive", "pc", "mod");
-        return Directory.Exists(dir) ? Directory.GetFiles(dir, $"*{Scanner.BudgetArchiveMarker}*.archive").FirstOrDefault() : null;
+        foreach (var dir in new[] { System.IO.Path.Combine(modRoot, "archive", "pc", "mod"), extraDir })
+            if (dir != null && Directory.Exists(dir) && Directory.GetFiles(dir, $"*{Scanner.BudgetArchiveMarker}*.archive").FirstOrDefault() is { } f) return f;
+        return null;
     }
 
     /// <summary>Rough size of the fix file: halved texture data, scaled by how well each texture compressed in its mod.</summary>
@@ -23,6 +24,7 @@ public static class BudgetArchive
     {
         public int Done;
         public int Total;
+        public volatile string Phase = "shrinking";
         public readonly System.Collections.Concurrent.ConcurrentDictionary<string, DateTime> InFlight = new();
     }
 
@@ -35,16 +37,17 @@ public static class BudgetArchive
     /// Workers never touch the console: progress is read from <paramref name="status"/> by the caller.
     /// </summary>
     public static Outcome Build(ScanResult r, BudgetPlan plan, string modRoot, Action<string> log,
-        BuildStatus? status = null, int threads = 0, Action<string>? trace = null, bool stageInTemp = false)
+        BuildStatus? status = null, int threads = 0, Action<string>? trace = null, string? targetDir = null)
     {
         if (!Oodle.Available) throw new InvalidOperationException("Oodle (bin/x64/oo2ext_7_win64.dll) is required to write archives.");
-        var dir = System.IO.Path.Combine(modRoot, "archive", "pc", "mod");
+        // targetDir: where the archive goes (MO2 users get a real MO2 mod folder instead of the virtual game folder).
+        var dir = targetDir ?? System.IO.Path.Combine(modRoot, "archive", "pc", "mod");
         Directory.CreateDirectory(dir);
-        Remove(modRoot, quiet: true);
+        Remove(modRoot, quiet: true, extraDir: targetDir);
         status ??= new BuildStatus();
         status.Total = plan.Steps.Count;
         if (threads <= 0) threads = Math.Clamp(Environment.ProcessorCount - 1, 1, 8);
-        trace?.Invoke($"build: {plan.Steps.Count} textures, {threads} thread(s), staging in {(stageInTemp ? "temp" : "mod folder")}");
+        trace?.Invoke($"build: {plan.Steps.Count} textures, {threads} thread(s), output {dir}");
 
         var sources = new Dictionary<string, (RdarArchive A, Dictionary<ulong, ArchiveEntry> ByHash)>(StringComparer.OrdinalIgnoreCase);
         var skipped = new System.Collections.Concurrent.ConcurrentBag<string>();
@@ -53,7 +56,8 @@ public static class BudgetArchive
         const long memoryCap = 1536L << 20;
         long inFlightBytes = 0;
         var memGate = new object();
-        using var writer = new ArchiveWriter(stageInTemp ? System.IO.Path.GetTempPath() : dir);
+        // Stage next to the destination: the final step is then a same-folder rename, never a cross-drive copy.
+        using var writer = new ArchiveWriter(dir);
         try
         {
             foreach (var file in plan.Steps.Select(s => s.Mod.File).Distinct(StringComparer.OrdinalIgnoreCase))
@@ -117,7 +121,10 @@ public static class BudgetArchive
         var path = System.IO.Path.Combine(dir, name);
         if (writer.Count == 0) { log("Nothing to write: no plan steps could be applied."); return new Outcome(path, 0, 0, skipped.ToList()); }
         int count = writer.Count;
+        status.Phase = "saving";
+        trace?.Invoke($"saving {path}");
         writer.Write(path);
+        trace?.Invoke("saved");
 
         var modlist = System.IO.Path.Combine(dir, "modlist.txt");
         if (File.Exists(modlist))
@@ -132,21 +139,27 @@ public static class BudgetArchive
         return new Outcome(path, count, saved, skipped.ToList());
     }
 
-    public static bool Remove(string modRoot, bool quiet = false)
+    /// <summary>
+    /// Deletes the budget archive from the game's mod folder and from <paramref name="extraDir"/>
+    /// (where it goes for MO2 users), plus leftovers of interrupted runs.
+    /// </summary>
+    public static bool Remove(string modRoot, bool quiet = false, string? extraDir = null)
     {
-        var dir = System.IO.Path.Combine(modRoot, "archive", "pc", "mod");
-        if (!Directory.Exists(dir)) return false;
+        var gameDir = System.IO.Path.Combine(modRoot, "archive", "pc", "mod");
         bool any = false;
-        foreach (var f in Directory.GetFiles(dir, $"*{Scanner.BudgetArchiveMarker}*.archive"))
+        foreach (var dir in new[] { gameDir, extraDir }.Where(d => d != null && Directory.Exists(d)).Cast<string>())
         {
-            File.Delete(f);
-            any = true;
-            if (!quiet) Console.WriteLine($"Removed {f}");
+            foreach (var f in Directory.GetFiles(dir, $"*{Scanner.BudgetArchiveMarker}*.archive"))
+            {
+                File.Delete(f);
+                any = true;
+                if (!quiet) Console.WriteLine($"Removed {f}");
+            }
+            // Leftovers from an interrupted run.
+            foreach (var f in Directory.GetFiles(dir, StagingPattern).Concat(Directory.GetFiles(dir, "RipperDoc-*.part"))) try { File.Delete(f); } catch { }
         }
-        // Leftovers from an interrupted run.
-        foreach (var d in new[] { dir, System.IO.Path.GetTempPath() })
-            foreach (var f in Directory.GetFiles(d, StagingPattern).Concat(Directory.GetFiles(d, "RipperDoc-*.part"))) try { File.Delete(f); } catch { }
-        var modlist = System.IO.Path.Combine(dir, "modlist.txt");
+        try { foreach (var f in Directory.GetFiles(System.IO.Path.GetTempPath(), StagingPattern)) File.Delete(f); } catch { }
+        var modlist = System.IO.Path.Combine(gameDir, "modlist.txt");
         if (File.Exists(modlist))
         {
             var lines = File.ReadAllLines(modlist);

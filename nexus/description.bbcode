@@ -51,15 +51,15 @@ It depends on your mods and what's on screen. The report estimates the maximum; 
 No. That's every piece of clothing, every car and every prop you have installed, added up as if you used all of them at the same moment, which never happens. The game only loads the ones you're wearing, driving or looking at. That's why only [b]Normal play[/b] counts against your budget.
 
 [b]Where is the fix file? I can't find it.[/b]
-After [b]2 - Apply budget fix[/b] finishes, it opens Explorer with the new file selected: [i]archive\pc\mod\!RipperDoc_Budget.archive[/i]. If it says "Nothing to fix", your mods already fit (answer Y to the second question to shrink new items' 4K textures anyway). If you run it through Mod Organizer 2, MO2 puts the file in its [i]Overwrite[/i] folder; that works, or right-click Overwrite > Create mod to keep it tidy.
+After [b]2 - Apply budget fix[/b] finishes, it opens Explorer with the new file selected: [i]archive\pc\mod\!RipperDoc_Budget.archive[/i]. If it says "Nothing to fix", your mods already fit (answer Y to the second question to shrink new items' 4K textures anyway). [b]Mod Organizer 2 users:[/b] when you run it through MO2, the fix is saved as a new MO2 mod called [i]VRAM RipperDoc Budget Fix[/i]. Press F5 (Refresh) in MO2 and tick it to enable it.
 
 [b]The scan or the fix seems stuck / nothing opens.[/b]
 Big mod lists (thousands of archives) take a few minutes. Watch the "Scanning mods: X / Y" counter, and while the fix is being written, the "Writing fix: X / Y textures" counter with time left. The report opens in your browser when it's done, and is also saved as [i]VRAM-RipperDoc-Report.html[/i] next to the tool.
-[b]Please use v0.2.4 or newer.[/b] In older versions, clicking inside the black window could pause the tool (Windows does that while you select text) and it looked stuck at the end. If it ever stops moving for a minute, it now prints which texture it's working on. Please post the [i]VRAM-RipperDoc-Fix.log[/i] file from the tool's folder in the comments so I can fix it.
+[b]Please use v0.2.5 or newer.[/b] Older versions could hang right at the end when run through Mod Organizer 2: saving the file into MO2's virtual game folder could freeze. Now MO2 users get the fix as a normal MO2 mod instead (see above). Clicking inside the black window also no longer pauses it. If it ever stops moving for a minute, it says so. Please post the [i]VRAM-RipperDoc-Fix.log[/i] file from the tool's folder in the comments so I can fix it.
 A leftover [i]RipperDoc-....ripperdoc-tmp[/i] (or older [i].part[/i]) file is an unfinished fix. Running the fix or Undo again deletes it.
 
 [b]Does it work with Mod Organizer 2?[/b]
-Yes. It looks for your MO2 setup automatically. If no mods are found, [b]1 - Scan my mods[/b] asks for your MO2 folder (the one with ModOrganizer.ini) once and remembers it. You can also run it from inside MO2 as an executable.
+Yes. It looks for your MO2 setup automatically. If no mods are found, [b]1 - Scan my mods[/b] asks for your MO2 folder (the one with ModOrganizer.ini) once and remembers it. You can also run it from inside MO2 as an executable. When run through MO2, [b]2 - Apply budget fix[/b] saves the fix as an MO2 mod named [i]VRAM RipperDoc Budget Fix[/i]: refresh MO2 (F5) and enable it. Undo budget fix deletes it again.
 
 [b]Why does a car or mirror mod use so much?[/b]
 The numbers are the mod's own textures and 3D models. Vehicle mods often ship 4K textures for every part, which adds up fast. Click the mod in the report to see exactly which files are heavy.

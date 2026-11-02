@@ -59,6 +59,49 @@ public sealed class ModManagers
         if (n > 0) Notes.Add($"Vortex: matched {n} archive(s) to installed mods.");
     }
 
+    /// <summary>The real (non-virtual) mods folder of an MO2 instance, or null.</summary>
+    public static string? Mo2ModsDir(string instance)
+    {
+        try
+        {
+            var iniPath = Path.Combine(instance, "ModOrganizer.ini");
+            var ini = File.Exists(iniPath) ? ParseIni(File.ReadAllLines(iniPath)) : new();
+            string Unwrap(string? v) => v == null ? "" : Regex.Replace(v, @"^@ByteArray\((.*)\)$", "$1").Replace(@"\\", @"\").Replace('/', '\\');
+            var baseDir = Unwrap(ini.GetValueOrDefault("base_directory"));
+            if (baseDir.Length == 0) baseDir = instance;
+            var modsDir = Unwrap(ini.GetValueOrDefault("mod_directory")).Replace("%BASE_DIR%", baseDir);
+            if (modsDir.Length == 0) modsDir = Path.Combine(baseDir, "mods");
+            return Directory.Exists(modsDir) ? modsDir : null;
+        }
+        catch { return null; }
+    }
+
+    /// <summary>
+    /// The MO2 instance that is running right now (the one that launched us through its virtual file system):
+    /// a portable instance next to ModOrganizer.exe, or the global instance MO2 last opened.
+    /// </summary>
+    public static string? RunningMo2Instance()
+    {
+        try
+        {
+            foreach (var p in System.Diagnostics.Process.GetProcessesByName("ModOrganizer"))
+            {
+                string? exeDir = null;
+                try { exeDir = Path.GetDirectoryName(p.MainModule?.FileName); } catch { }
+                if (exeDir != null && File.Exists(Path.Combine(exeDir, "ModOrganizer.ini"))) return exeDir;
+            }
+            if (OperatingSystem.IsWindows() &&
+                Microsoft.Win32.Registry.GetValue(@"HKEY_CURRENT_USER\Software\Mod Organizer Team\Mod Organizer", "CurrentInstance", null) is string name && name.Length > 0)
+            {
+                var dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ModOrganizer", name);
+                if (File.Exists(Path.Combine(dir, "ModOrganizer.ini"))) return dir;
+            }
+        }
+        catch { }
+        var all = AllMo2Instances();
+        return all.Count == 1 ? all[0] : null;
+    }
+
     /// <summary>Every Cyberpunk 2077 MO2 instance in the default location, whatever game path it points at.</summary>
     public static List<string> AllMo2Instances() => FindMo2Instances("");
 

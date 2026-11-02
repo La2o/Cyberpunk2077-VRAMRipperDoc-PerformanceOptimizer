@@ -32,7 +32,7 @@ Usage: VramRipperdoc [options]
 """;
 
 var flags = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-    { "no-vanilla", "no-open", "json", "help", "pause", "make-budget-archive", "include-new-items", "remove-budget-archive", "live", "share", "ask-mo2", "ask", "stress-all", "stage-in-temp" };
+    { "no-vanilla", "no-open", "json", "help", "pause", "make-budget-archive", "include-new-items", "remove-budget-archive", "live", "share", "ask-mo2", "ask", "stress-all" };
 var opts = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
 for (int i = 0; i < args.Length; i++)
 {
@@ -81,22 +81,28 @@ if (game == null)
 }
 var modRoot = opts.GetValueOrDefault("mod-root") ?? game;
 
+// Remember an MO2 folder the user gave us once, so the shortcuts keep working.
+var settingsFile = Path.Combine(AppContext.BaseDirectory, "RipperDoc.ini");
+var mo2 = opts.GetValueOrDefault("mo2") ?? ReadSetting(settingsFile, "mo2");
+// Where an MO2 user's fix was saved last time (a real MO2 mod folder, outside the virtual game folder).
+var savedFixDir = ReadSetting(settingsFile, "fixdir");
+
 if (opts.ContainsKey("remove-budget-archive"))
 {
-    if (BudgetArchive.Remove(modRoot)) Console.WriteLine("The budget fix was removed. Everything is back as it was.");
-    else Console.WriteLine("No budget fix found, so there was nothing to remove." + (UnderMo2() ? "" : " (If you applied it through MO2, delete it from MO2's Overwrite folder.)"));
+    if (BudgetArchive.Remove(modRoot, extraDir: savedFixDir))
+    {
+        Console.WriteLine("The budget fix was removed. Everything is back as it was.");
+        if (savedFixDir != null) Console.WriteLine("(In Mod Organizer 2 you can now also delete the empty \"" + Mo2FixModName + "\" mod.)");
+    }
+    else Console.WriteLine("No budget fix found, so there was nothing to remove. (If you made one with v0.2.4 or older through MO2, delete it from MO2's Overwrite folder.)");
     return 0;
 }
 if (opts.ContainsKey("live"))
     return LiveMonitor.Run(opts.GetValueOrDefault("process") ?? "Cyberpunk2077", opts.GetValueOrDefault("label") ?? "session",
-        int.TryParse(opts.GetValueOrDefault("seconds"), out var secs) ? secs : 0, outDir, BudgetArchive.FindExisting(modRoot) != null);
+        int.TryParse(opts.GetValueOrDefault("seconds"), out var secs) ? secs : 0, outDir, BudgetArchive.FindExisting(modRoot, savedFixDir) != null);
 
 Log($"VRAM RipperDoc v{Report.Version} - scanning {game}");
 bool interactive = !quiet && (!Console.IsInputRedirected || opts.ContainsKey("ask-mo2")); // --ask-mo2: test hook
-
-// Remember an MO2 folder the user gave us once, so the shortcuts keep working.
-var settingsFile = Path.Combine(AppContext.BaseDirectory, "RipperDoc.ini");
-var mo2 = opts.GetValueOrDefault("mo2") ?? ReadSetting(settingsFile, "mo2");
 
 int lastPct = -1;
 var progressLock = new object();
@@ -159,6 +165,7 @@ if (opts.TryGetValue("budget", out var b) && double.TryParse(b, System.Globaliza
     result.BudgetWhy = "set with --budget";
 }
 else (budget, result.BudgetWhy) = GpuInfo.SuggestBudget(result.Gpu?.VramBytes ?? 8L << 30, result.Settings);
+result.BudgetArchive ??= BudgetArchive.FindExisting(modRoot, savedFixDir);
 var plan = BudgetPlan.Build(result, budget, includeNew: opts.ContainsKey("include-new-items"));
 if (opts.ContainsKey("stress-all")) // developer stress test: halve every loaded 2K+ texture
     plan.Steps = result.Mods.SelectMany(m => m.Assets.Where(a => a.Kind == AssetKind.Texture && a.Loads && a.MaxDim >= 2048).Select(a => new PlanStep(m, a, 1, a.GpuBytes * 3 / 4))).ToList();
@@ -227,7 +234,19 @@ if (makingFix)
     }
     else
     {
-        bool viaMo2 = UnderMo2();
+        // Through MO2, writing into the virtual game folder can hang at the very end (seen in user logs),
+        // so the fix becomes a real MO2 mod folder instead. --mo2-output <instance> forces this (testing).
+        bool viaMo2 = UnderMo2() || opts.ContainsKey("mo2-output");
+        string? targetDir = null;
+        bool mo2ModFolder = false;
+        if (viaMo2)
+        {
+            var inst = opts.GetValueOrDefault("mo2-output") ?? mo2 ?? ModManagers.RunningMo2Instance();
+            var modsDir = inst != null ? ModManagers.Mo2ModsDir(inst) : null;
+            mo2ModFolder = modsDir != null;
+            var root = modsDir ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "VRAM RipperDoc");
+            targetDir = Path.Combine(root, Mo2FixModName, "archive", "pc", "mod");
+        }
         int threads = int.TryParse(opts.GetValueOrDefault("threads"), out var t) && t > 0 ? t
             : viaMo2 ? 2 // MO2's virtual file system is safest with little concurrent file I/O
             : Math.Clamp(Environment.ProcessorCount - 1, 1, 8);
@@ -254,23 +273,30 @@ if (makingFix)
                     var left = TimeSpan.FromSeconds(started.Elapsed.TotalSeconds / done * (total - done));
                     eta = left.TotalMinutes >= 1 ? $" · about {Math.Ceiling(left.TotalMinutes)} min left" : $" · about {Math.Max(1, Math.Ceiling(left.TotalSeconds))} s left";
                 }
-                Console.Write($"\r  Writing fix: {done:N0} / {total:N0} textures ({done * 100 / total}%){eta}        ");
+                bool saving = status.Phase == "saving";
+                Console.Write(saving
+                    ? $"\r  Saving the fix file...                                              "
+                    : $"\r  Writing fix: {done:N0} / {total:N0} textures ({done * 100 / total}%){eta}        ");
                 if (!warned && DateTime.UtcNow - lastChange > TimeSpan.FromSeconds(60))
                 {
                     warned = true;
                     var slow = status.InFlight.OrderBy(kv => kv.Value).Take(3).Select(kv => kv.Key).ToList();
                     Console.WriteLine();
-                    Console.WriteLine($"  Still working on: {string.Join("; ", slow)}");
+                    Console.WriteLine(saving || slow.Count == 0
+                        ? "  Still saving the fix file (all textures are done)."
+                        : $"  Still working on: {string.Join("; ", slow)}");
                     Console.WriteLine("  (If this never moves on, close the window and post VRAM-RipperDoc-Fix.log on the mod page.)");
-                    Trace("watchdog: no progress for 60 s; in flight: " + string.Join("; ", status.InFlight.Keys));
+                    Trace($"watchdog: no progress for 60 s; phase={status.Phase}; in flight: " + string.Join("; ", status.InFlight.Keys));
                 }
             }
-            Console.WriteLine($"\r  Writing fix: {status.Done:N0} / {status.Total:N0} textures (100%)                         ");
+            Console.WriteLine($"\r  Writing fix: {status.Done:N0} / {status.Total:N0} textures (100%), saved.                         ");
         }) { IsBackground = true };
         ui.Start();
         BudgetArchive.Outcome outcome;
-        try { outcome = BudgetArchive.Build(result, plan, modRoot, Log, status, threads, Trace, stageInTemp: viaMo2 || opts.ContainsKey("stage-in-temp")); }
+        Trace($"output: {targetDir ?? "game folder"}");
+        try { outcome = BudgetArchive.Build(result, plan, modRoot, Log, status, threads, Trace, targetDir); }
         finally { buildDone.Set(); ui.Join(2000); }
+        if (targetDir != null) WriteSetting(settingsFile, "fixdir", targetDir);
         Trace($"finished: {outcome.Textures} written, {outcome.Skipped.Count} skipped, {started.Elapsed.TotalSeconds:0}s");
         Console.WriteLine($"  Finished in {started.Elapsed.TotalSeconds:0}s.");
         Console.WriteLine();
@@ -279,15 +305,22 @@ if (makingFix)
         Console.WriteLine();
         Console.WriteLine("The fix is ONE new file (your mods were not changed):");
         Console.WriteLine($"  {outcome.Path}");
-        if (UnderMo2())
-        {
-            Console.WriteLine();
-            Console.WriteLine("You ran this through Mod Organizer 2, so MO2 put the new file in its \"Overwrite\" folder.");
-            Console.WriteLine("That works as is. To keep it tidy: in MO2 right-click Overwrite > Create mod, and keep that mod enabled.");
-        }
         if (outcome.Skipped.Count > 0) Console.WriteLine($"({outcome.Skipped.Count} texture(s) were skipped because their format can't be shrunk safely.)");
         Console.WriteLine();
-        Console.WriteLine("Start the game as usual. To undo, double-click \"Undo budget fix.bat\".");
+        if (mo2ModFolder)
+        {
+            Console.WriteLine($"MOD ORGANIZER 2: the fix was saved as a new MO2 mod called \"{Mo2FixModName}\".");
+            Console.WriteLine("  1. In MO2, press F5 (or the Refresh button) so it shows up in the left list.");
+            Console.WriteLine("  2. Tick its checkbox to enable it. That's it; start the game from MO2 as usual.");
+            Console.WriteLine("  To undo: untick it, or double-click \"Undo budget fix.bat\".");
+        }
+        else if (viaMo2)
+        {
+            Console.WriteLine("MOD ORGANIZER 2: your MO2 mods folder wasn't found, so the fix was saved as a ready-made mod folder:");
+            Console.WriteLine($"  {Path.GetDirectoryName(Path.GetDirectoryName(Path.GetDirectoryName(Path.GetDirectoryName(outcome.Path))))}");
+            Console.WriteLine("  Copy that folder into MO2's mods folder (or zip it and use MO2's \"Install a new mod from an archive\"), then enable it.");
+        }
+        else Console.WriteLine("Start the game as usual. To undo, double-click \"Undo budget fix.bat\".");
         openAfter = outcome.Path;
     }
     Console.WriteLine(new string('=', 72));
@@ -464,4 +497,10 @@ static class NativeConsole
     [System.Runtime.InteropServices.DllImport("kernel32.dll")] public static extern IntPtr GetStdHandle(int nStdHandle);
     [System.Runtime.InteropServices.DllImport("kernel32.dll")] public static extern bool GetConsoleMode(IntPtr hConsoleHandle, out uint lpMode);
     [System.Runtime.InteropServices.DllImport("kernel32.dll")] public static extern bool SetConsoleMode(IntPtr hConsoleHandle, uint dwMode);
+}
+
+static partial class Program
+{
+    /// <summary>Name of the MO2 mod folder the fix is saved as when run through Mod Organizer 2.</summary>
+    public const string Mo2FixModName = "VRAM RipperDoc Budget Fix";
 }
