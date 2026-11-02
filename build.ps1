@@ -7,6 +7,7 @@ $stage = "$root/dist/stage"
 Remove-Item -Recurse -Force $stage -ErrorAction SilentlyContinue
 $tool = New-Item -ItemType Directory -Force "$stage/tools/VRAM RipperDoc"
 Copy-Item "$root/dist/bin/VramRipperdoc.exe", "$root/README.md", "$root/COMPARISON.md", "$root/LICENSE" $tool
+Copy-Item "$root/package/*" $tool  # double-click shortcuts + START HERE.txt
 $zip = "$root/dist/VRAM-RipperDoc-Performance-Optimizer-$version.zip"
 Remove-Item $zip -ErrorAction SilentlyContinue
 Add-Type -AssemblyName System.IO.Compression, System.IO.Compression.FileSystem

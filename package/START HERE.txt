@@ -1,0 +1,24 @@
+VRAM RipperDoc - Performance Optimizer
+======================================
+
+Double-click the numbered files in order:
+
+  1 - Scan my mods.bat
+      Checks every texture and mesh mod you have installed and opens a report
+      in your browser. The heaviest mods are at the top. Changes nothing.
+
+  2 - Apply budget fix.bat   (optional)
+      If the report says you are over budget, this adds ONE extra file with
+      half-size copies of only the heaviest textures. Your mods are not changed.
+
+  3 - Measure VRAM in game.bat   (optional)
+      Records how much video memory the game really uses while you play.
+      Run it once named "before", apply the fix, then again named "after"
+      in the same save to see the difference.
+
+  Undo budget fix.bat
+      Removes the extra file from step 2. Everything is back as it was.
+
+Reports are saved next to these files (VRAM-RipperDoc-Report.html).
+Advanced options: open a terminal here and run  VramRipperdoc.exe --help
+More info: README.md, or https://www.nexusmods.com/cyberpunk2077/mods/36878

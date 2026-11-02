@@ -1,58 +1,86 @@
 [size=5][b][color=#fcee0a]VRAM RipperDoc - Performance Optimizer[/color][/b][/size]
-[size=3]Find out which texture and mesh mods are eating your VRAM, fix only the worst offenders with one command, and measure the result in-game.[/size]
+[size=3]Stuttering with a lot of texture or clothing mods? This shows you [b]which mods use up your graphics card's memory (VRAM)[/b], and can shrink just the heaviest textures with one double-click. Your mods are never changed.[/size]
 
-Script profilers tell you what redscript/CET mods cost. Nothing told you what your [b].archive asset mods[/b] cost. Stutter with a big modlist on an 8–12 GB card? This tells you which mods are responsible, then fixes them without touching the mods.
+[size=4][b]Who it's for[/b][/size]
+Players with an [b]8–16 GB graphics card[/b] and lots of texture, clothing, character or environment mods. When VRAM runs out you get stutter, blurry textures popping in, or crashes. If you're not short on VRAM this won't raise your FPS, but the report still finds broken and useless files.
 
-[size=4][b]What it does[/b][/size]
+[size=4][b]Quick start (3 double-clicks)[/b][/size]
+After installing, open [i]Cyberpunk 2077\tools\VRAM RipperDoc\[/i] and double-click:
+[list=1]
+[*][b]1 - Scan my mods.bat[/b]: checks every texture and mesh mod and opens a report in your browser. Changes nothing.
+[*][b]2 - Apply budget fix.bat[/b] [i](optional)[/i]: if the report says you're over budget, this adds [b]one extra file[/b] with half-size copies of only your heaviest textures. Your mods stay exactly as they are.
+[*][b]3 - Measure VRAM in game.bat[/b] [i](optional)[/i]: records how much VRAM the game really uses while you play. Run it once named "before" and once named "after" (same save, same spot) to see what changed.
+[/list]
+Changed your mind? Double-click [b]Undo budget fix.bat[/b] and everything is back as it was.
+
+[size=4][b]What the report tells you[/b][/size]
 [list]
-[*][b]Ranks every archive mod by added VRAM[/b]: the GPU data of each texture and mesh, [i]minus what the vanilla file it replaces already used[/i]
-[*][b]Geometry check[/b]: LOD0 triangles, meshes with no LODs, "5x vanilla triangles"
-[*][b]Texture check[/b]: 4K/8K, no mipmaps, uncompressed formats, "16x vanilla pixels"
-[*][b]Missing requirements[/b]: mods that reference files that aren't installed
-[*][b]Dead weight[/b]: files that never load (load-order conflicts), files identical to vanilla, duplicate copies across mods, likely unused leftovers
-[*][b]Broken archive detection[/b]: truncated or corrupt downloads named outright
-[*][b]Vortex and MO2 aware[/b]: groups archives by installed mod and links each to its Nexus page
-[*][b]Settings-aware budget[/b]: reads your GPU and in-game settings (resolution, textures, RT/PT, frame gen)
-[*][b]One-command fix[/b] [i](optional)[/i]: [b]--make-budget-archive[/b] halves only the planned textures, using the game's own smaller mips (no re-encoding). It writes [b]one extra archive[/b]; your mods are never modified. Delete that file to undo.
-[*][b]Real VRAM measurement[/b]: [b]--live[/b] records the game's actual VRAM while you play, then compares before and after
-[*]Sortable HTML report, "what changed since last scan", and a [b]copy-paste summary[/b] for support threads
+[*][b]Which mods are heaviest[/b]: how much extra VRAM each mod adds compared to the normal game, biggest first
+[*][b]Why[/b]: oversized textures (4K/8K), very detailed models that never simplify at a distance, textures saved in wasteful formats
+[*][b]Broken or missing[/b]: corrupt downloads, and mods that need another mod you haven't installed (a common cause of crashes and invisible items)
+[*][b]Wasted files[/b]: files that never load because another mod overrides them, files identical to the normal game, and duplicates across mods
+[*][b]Which installed mod each file belongs to[/b] (works with Vortex and Mod Organizer 2), with a link to its Nexus page
+[*][b]Your budget[/b]: how much VRAM your mods can use on your graphics card at your in-game settings
+[/list]
+
+[size=4][b]Reading the report[/b][/size]
+[list]
+[*]Mods at the top of the table cost the most VRAM. Click a mod to see its heaviest files.
+[*][color=#ff4d6d]Red numbers[/color] are worth a look: flags, missing files, or being over budget.
+[*]Over budget? The simplest fix is often the [b]1K or 2K version[/b] of a big texture mod, if the author offers one. Otherwise use [b]2 - Apply budget fix[/b].
+[*]Need help with a crash or stutter? Click [b]Copy summary for a support post[/b] and paste it into your post.
 [/list]
 
 [size=4][b]Install[/b][/size]
-Vortex / MO2: install as usual. Manual: extract into your Cyberpunk 2077 folder.
-It goes to [i]Cyberpunk 2077\tools\VRAM RipperDoc\[/i]. Double-click [b]VramRipperdoc.exe[/b] and the report opens in your browser.
+Install with [b]Vortex[/b] or [b]Mod Organizer 2[/b] like any other mod, or extract the zip into your Cyberpunk 2077 folder (the one with [i]bin[/i] and [i]archive[/i]).
+No requirements. It runs on its own (Windows 10/11, 64-bit).
 
-No requirements: self-contained Windows x64 exe, no .NET install. It uses the game's own Oodle DLL.
+[size=4][b]FAQ[/b][/size]
+[spoiler]
+[b]Is it safe? Does it change my mods?[/b]
+Scanning only reads files. The optional budget fix adds one new file ([i]archive\pc\mod\!RipperDoc_Budget.archive[/i]) and never edits your mods. Delete that file, or run Undo budget fix, to go back.
 
-[size=4][b]Typical use[/b][/size]
-[list=1]
-[*]Run it and read the report.
-[*]In-game, run [b]VramRipperdoc.exe --live --label before[/b] for a minute.
-[*]Run [b]VramRipperdoc.exe --make-budget-archive[/b].
-[*]Load the same save and run [b]--live --label after[/b] to see the difference.
-[*]Undo any time with [b]--remove-budget-archive[/b].
-[/list]
+[b]Will textures look worse?[/b]
+Only the textures the fix shrinks, and only to half size. That's the same smaller version the game already shows from a distance. Everything else stays sharp. If something looks too soft up close, undo the fix.
 
-[size=4][b]Tested in game[/b][/size]
-Cyberpunk 2077 2.5 + Phantom Liberty, RTX 3070 8 GB, 1080p, RT on. A test budget archive halving 360 vanilla 2K+ textures loaded and rendered with no crashes or corruption. At the same spot, steady VRAM went from 4.62 GB to 4.50 GB. Only part of those textures were on screen there; heavy texture modlists save more, and [b]--live[/b] lets you measure your own.
+[b]How much VRAM will I save?[/b]
+It depends on your mods and what's on screen. The report estimates the maximum; [b]3 - Measure VRAM in game[/b] shows the real number. In our test with [i]no texture mods at all[/i] (the worst case for this tool), halving 360 of the game's own textures saved about 120 MB at one spot in the Badlands. Heavy texture modlists have far more to trim.
 
-[size=4][b]How it's different[/b][/size]
+[b]Does it work with Mod Organizer 2?[/b]
+Yes. It looks for your MO2 setup automatically. If your MO2 mods don't show up in the report, run [i]VramRipperdoc.exe --mo2 "path to your MO2 instance"[/i].
+
+[b]Will it raise my FPS?[/b]
+Only if you're running out of VRAM, which shows up as stutter and textures loading late. If you have plenty to spare, it won't change your FPS.
+
+[b]I updated my mods. Do I need to redo the fix?[/b]
+Run 2 - Apply budget fix again; it replaces the old fix file. The report also shows what changed since your last scan.
+[/spoiler]
+
+[size=4][b]How it's different from other performance mods[/b][/size]
+[spoiler]
 [list]
-[*][b]Ultra+, OAI Tweaks, PinkStone[/b]: tune the engine. RipperDoc shows which [i]asset mods[/i] use the VRAM those settings have to work with.
-[*][b]FrameFlow, Adaptive Graphics Quality[/b]: lower quality at runtime after FPS drops. RipperDoc finds the asset cause and fixes just that.
-[*][b]RedProfiler, G's TOTAL Profiler[/b]: per-mod blame for [i]scripts[/i]. RipperDoc is the same idea for [i]textures and meshes[/i].
-[*][b]Universal Texture Downscaler[/b]: caps [i]every[/i] texture. RipperDoc halves only the few worst offenders, so vanilla and light mods stay sharp.
-[*][b]CP2077 Texture Merger[/b]: picks the better texture in a conflict. RipperDoc reports what every asset costs, and which copies never load.
-[*][b]Advanced Crash Reporter[/b]: when no mod is in the stack it can only say "an archive mod may be responsible". RipperDoc names heavy, conflicting and corrupt archives, and missing requirements.
+[*][b]Ultra+, OAI Tweaks, PinkStone[/b] tune the game engine. RipperDoc shows which of your [i]mods[/i] use up the VRAM those settings have to work with.
+[*][b]FrameFlow, Adaptive Graphics Quality[/b] lower quality after your FPS drops. RipperDoc finds the cause and fixes just that.
+[*][b]RedProfiler, G's TOTAL Profiler[/b] measure [i]script[/i] mods. RipperDoc does the same for [i]texture and model[/i] mods.
+[*][b]Universal Texture Downscaler[/b] shrinks [i]every[/i] texture. RipperDoc shrinks only the few heaviest ones, so everything else stays sharp.
+[*][b]CP2077 Texture Merger[/b] picks the better texture when mods clash. RipperDoc shows what each one costs, and which copies never load.
+[*][b]Advanced Crash Reporter[/b] can only say "an archive mod may be responsible". RipperDoc names corrupt archives and missing requirements.
 [/list]
-Use it [i]alongside[/i] all of the above.
+Use it [i]alongside[/i] any of these.
+[/spoiler]
 
-[size=4][b]Honest limits[/b][/size]
+[size=4][b]Technical details (for modders)[/b][/size]
+[spoiler]
 [list]
-[*]Scan numbers are [b]estimates[/b] for "everything this mod adds is on screen". The game streams assets; use [b]--live[/b] for real numbers.
-[*]Biggest win on [b]8–16 GB cards[/b] with heavy texture or clothing mods. If you're not VRAM-limited, you won't gain FPS.
-[*]The budget archive halves textures only; dense meshes are flagged for you to swap.
+[*]Reads the game's load order (archive\pc\mod in ASCII order or modlist.txt, then REDmod, plus MO2 mods outside the game folder). The first archive wins a conflict.
+[*]Parses RDAR archives and CR2W headers with the game's own Oodle DLL. Texture cost comes from the rendRenderTextureBlobPC buffer size, mesh triangles and LODs from rendRenderMeshBlob chunk infos.
+[*]Compares against the vanilla content and ep1 archives (about 550k files), so costs are deltas and only references the mod [i]added[/i] can count as missing.
+[*]Flags: 4K/8K textures, no mipmaps, uncompressed textures, N× vanilla pixels or triangles, no LODs, dense meshes, missing hard imports, identical-to-vanilla files, duplicates, likely unused files.
+[*]The budget fix drops the top mip of each planned texture (no re-encoding). It rewrites sizes, offsets and every checksum, and writes a sorted, 4 KiB-aligned archive. Tested in game on 2.5.
+[*]The live monitor reads Windows "GPU Process Memory" performance counters, the same source as Task Manager.
+[*]Command line: [i]VramRipperdoc.exe --help[/i] (--budget, --json, --hashes, --share, --community and more).
 [/list]
+Source code (MIT): [url=https://github.com/La2o/Cyberpunk2077-VRAMRipperDoc-PerformanceOptimizer]GitHub[/url]
+[/spoiler]
 
-[b]Community (opt-in):[/b] [b]--share[/b] writes an anonymous per-mod cost file (archive names and numbers only) you can submit on GitHub. [b]--community[/b] shows other players' numbers.
-Source (MIT): [url=https://github.com/La2o/Cyberpunk2077-VRAMRipperDoc-PerformanceOptimizer]GitHub[/url]
+[b]Help other players (optional):[/b] run [i]VramRipperdoc.exe --share[/i] to create an anonymous file with only mod file names and their VRAM numbers, and submit it on GitHub. Over time this builds a list of how heavy popular mods are.

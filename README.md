@@ -37,7 +37,16 @@ Requirements: Windows 10/11 x64. No .NET install is needed (the exe is self-cont
 
 ## Use
 
-Double-click **`tools\VRAM RipperDoc\VramRipperdoc.exe`**. It finds the game, scans, prints a summary and opens `VRAM-RipperDoc-Report.html`.
+Open `tools\VRAM RipperDoc\` and double-click the numbered shortcuts (`START HERE.txt` explains them):
+
+| Shortcut | What it does |
+|---|---|
+| `1 - Scan my mods.bat` | Scans and opens `VRAM-RipperDoc-Report.html`. Changes nothing. |
+| `2 - Apply budget fix.bat` | Asks first, then writes the one extra budget archive. |
+| `3 - Measure VRAM in game.bat` | Asks for a name (for example *before* or *after*), then records real VRAM until you close the game. |
+| `Undo budget fix.bat` | Removes the budget archive. |
+
+Everything is also available from the command line:
 
 ```
  Scan (default, read-only)
