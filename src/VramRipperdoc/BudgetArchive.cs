@@ -8,11 +8,34 @@ public static class BudgetArchive
 {
     public sealed record Outcome(string Path, int Textures, long SavedBytes, List<string> Skipped);
 
-    public static string? FindExisting(string modRoot, string? extraDir = null)
+    public static string? FindExisting(string modRoot, IEnumerable<string>? extraDirs = null)
     {
-        foreach (var dir in new[] { System.IO.Path.Combine(modRoot, "archive", "pc", "mod"), extraDir })
-            if (dir != null && Directory.Exists(dir) && Directory.GetFiles(dir, $"*{Scanner.BudgetArchiveMarker}*.archive").FirstOrDefault() is { } f) return f;
+        foreach (var dir in (extraDirs ?? Enumerable.Empty<string>()).Prepend(System.IO.Path.Combine(modRoot, "archive", "pc", "mod")))
+            if (Directory.Exists(dir) && Directory.GetFiles(dir, $"*{Scanner.BudgetArchiveMarker}*.archive").FirstOrDefault() is { } f) return f;
         return null;
+    }
+
+    /// <summary>
+    /// Every folder outside the game's archive\pc\mod where a fix may be: the last saved one, the
+    /// "VRAM RipperDoc Budget Fix" mod and the Overwrite folder (v0.2.4 and older) of each MO2 instance we
+    /// know, and the Documents fallback. RipperDoc.ini can't be relied on alone: through MO2 it is written
+    /// to Overwrite, so an Undo double-clicked outside MO2 never sees it.
+    /// </summary>
+    public static List<string> KnownFixDirs(string? savedFixDir, IEnumerable<string?> mo2Instances, string toolDir)
+    {
+        var dirs = new List<string>();
+        void Add(string? d) { if (d != null && !dirs.Contains(d, StringComparer.OrdinalIgnoreCase)) dirs.Add(d); }
+        static string FixMod(string modsDir) => System.IO.Path.Combine(modsDir, Program.Mo2FixModName, "archive", "pc", "mod");
+        Add(savedFixDir);
+        foreach (var inst in mo2Instances.Append(ModManagers.Mo2InstanceAround(toolDir)).OfType<string>().Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            if (ModManagers.Mo2ModsDir(inst) is { } mods) Add(FixMod(mods));
+            if (ModManagers.Mo2OverwriteDir(inst) is { } overwrite) Add(System.IO.Path.Combine(overwrite, "archive", "pc", "mod"));
+        }
+        // Installed as an MO2 mod (<mods>\<this mod>\tools\VRAM RipperDoc): the fix mod is a sibling of ours.
+        if (new DirectoryInfo(toolDir).Parent?.Parent?.Parent is { } siblingMods) Add(FixMod(siblingMods.FullName));
+        Add(FixMod(System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "VRAM RipperDoc")));
+        return dirs;
     }
 
     /// <summary>Rough size of the fix file: halved texture data, scaled by how well each texture compressed in its mod.</summary>
@@ -37,13 +60,14 @@ public static class BudgetArchive
     /// Workers never touch the console: progress is read from <paramref name="status"/> by the caller.
     /// </summary>
     public static Outcome Build(ScanResult r, BudgetPlan plan, string modRoot, Action<string> log,
-        BuildStatus? status = null, int threads = 0, Action<string>? trace = null, string? targetDir = null)
+        BuildStatus? status = null, int threads = 0, Action<string>? trace = null, string? targetDir = null, IEnumerable<string>? otherFixDirs = null)
     {
         if (!Oodle.Available) throw new InvalidOperationException("Oodle (bin/x64/oo2ext_7_win64.dll) is required to write archives.");
         // targetDir: where the archive goes (MO2 users get a real MO2 mod folder instead of the virtual game folder).
         var dir = targetDir ?? System.IO.Path.Combine(modRoot, "archive", "pc", "mod");
         Directory.CreateDirectory(dir);
-        Remove(modRoot, quiet: true, extraDir: targetDir);
+        // Only one fix may exist: drop older ones wherever they are (game folder, MO2 mod, Overwrite).
+        Remove(modRoot, quiet: true, extraDirs: (otherFixDirs ?? Enumerable.Empty<string>()).Append(dir));
         status ??= new BuildStatus();
         status.Total = plan.Steps.Count;
         if (threads <= 0) threads = Math.Clamp(Environment.ProcessorCount - 1, 1, 8);
@@ -161,19 +185,19 @@ public static class BudgetArchive
     }
 
     /// <summary>
-    /// Deletes the budget archive from the game's mod folder and from <paramref name="extraDir"/>
-    /// (where it goes for MO2 users), plus leftovers of interrupted runs.
+    /// Deletes the budget archive from the game's mod folder and from <paramref name="extraDirs"/>
+    /// (see <see cref="KnownFixDirs"/>), plus leftovers of interrupted runs. Returns the files removed.
     /// </summary>
-    public static bool Remove(string modRoot, bool quiet = false, string? extraDir = null)
+    public static List<string> Remove(string modRoot, bool quiet = false, IEnumerable<string>? extraDirs = null)
     {
         var gameDir = System.IO.Path.Combine(modRoot, "archive", "pc", "mod");
-        bool any = false;
-        foreach (var dir in new[] { gameDir, extraDir }.Where(d => d != null && Directory.Exists(d)).Cast<string>())
+        var removed = new List<string>();
+        foreach (var dir in (extraDirs ?? Enumerable.Empty<string>()).Prepend(gameDir).Distinct(StringComparer.OrdinalIgnoreCase).Where(Directory.Exists))
         {
             foreach (var f in Directory.GetFiles(dir, $"*{Scanner.BudgetArchiveMarker}*.archive"))
             {
                 File.Delete(f);
-                any = true;
+                removed.Add(f);
                 if (!quiet) Console.WriteLine($"Removed {f}");
             }
             // Leftovers from an interrupted run.
@@ -187,6 +211,6 @@ public static class BudgetArchive
             var kept = lines.Where(l => !l.Contains(Scanner.BudgetArchiveMarker)).ToArray();
             if (kept.Length != lines.Length) File.WriteAllLines(modlist, kept);
         }
-        return any;
+        return removed;
     }
 }

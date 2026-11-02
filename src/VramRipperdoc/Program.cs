@@ -87,20 +87,29 @@ var settingsFile = Path.Combine(AppContext.BaseDirectory, "RipperDoc.ini");
 var mo2 = opts.GetValueOrDefault("mo2") ?? ReadSetting(settingsFile, "mo2");
 // Where an MO2 user's fix was saved last time (a real MO2 mod folder, outside the virtual game folder).
 var savedFixDir = ReadSetting(settingsFile, "fixdir");
+// Everywhere else a fix can be, so Undo finds it however it was made (savedFixDir alone misses MO2 fixes, see KnownFixDirs).
+var fixDirs = BudgetArchive.KnownFixDirs(savedFixDir,
+    new[] { mo2, ModManagers.RunningMo2Instance() }.Concat(ModManagers.AllMo2Instances()), AppContext.BaseDirectory);
 
 if (opts.ContainsKey("remove-budget-archive"))
 {
-    if (BudgetArchive.Remove(modRoot, extraDir: savedFixDir))
+    var removed = BudgetArchive.Remove(modRoot, extraDirs: fixDirs);
+    if (removed.Count > 0)
     {
         Console.WriteLine("The budget fix was removed. Everything is back as it was.");
-        if (savedFixDir != null) Console.WriteLine("(In Mod Organizer 2 you can now also delete the empty \"" + Mo2FixModName + "\" mod.)");
+        if (removed.Any(f => f.Contains(Mo2FixModName, StringComparison.OrdinalIgnoreCase)))
+            Console.WriteLine("(In Mod Organizer 2 you can now also delete the empty \"" + Mo2FixModName + "\" mod.)");
     }
-    else Console.WriteLine("No budget fix found, so there was nothing to remove. (If you made one with v0.2.4 or older through MO2, delete it from MO2's Overwrite folder.)");
+    else
+    {
+        Console.WriteLine("No budget fix found, so there was nothing to remove.");
+        Console.WriteLine("(Mod Organizer 2: if a \"" + Mo2FixModName + "\" mod is still in MO2's list, untick or delete it there.)");
+    }
     return 0;
 }
 if (opts.ContainsKey("live"))
     return LiveMonitor.Run(opts.GetValueOrDefault("process") ?? "Cyberpunk2077", opts.GetValueOrDefault("label") ?? "session",
-        int.TryParse(opts.GetValueOrDefault("seconds"), out var secs) ? secs : 0, outDir, BudgetArchive.FindExisting(modRoot, savedFixDir) != null);
+        int.TryParse(opts.GetValueOrDefault("seconds"), out var secs) ? secs : 0, outDir, BudgetArchive.FindExisting(modRoot, fixDirs) != null);
 
 Log($"VRAM RipperDoc v{Report.Version} - scanning {game}");
 bool interactive = !quiet && (!Console.IsInputRedirected || opts.ContainsKey("ask-mo2")); // --ask-mo2: test hook
@@ -166,7 +175,7 @@ if (opts.TryGetValue("budget", out var b) && double.TryParse(b, System.Globaliza
     result.BudgetWhy = "set with --budget";
 }
 else (budget, result.BudgetWhy) = GpuInfo.SuggestBudget(result.Gpu?.VramBytes ?? 8L << 30, result.Settings);
-result.BudgetArchive ??= BudgetArchive.FindExisting(modRoot, savedFixDir);
+result.BudgetArchive ??= BudgetArchive.FindExisting(modRoot, fixDirs);
 var plan = BudgetPlan.Build(result, budget, includeNew: opts.ContainsKey("include-new-items"));
 if (opts.ContainsKey("stress-all")) // developer stress test: halve every loaded 2K+ texture
     plan.Steps = result.Mods.SelectMany(m => m.Assets.Where(a => a.Kind == AssetKind.Texture && a.Loads && a.MaxDim >= 2048).Select(a => new PlanStep(m, a, 1, a.GpuBytes * 3 / 4))).ToList();
@@ -295,7 +304,7 @@ if (makingFix)
         ui.Start();
         BudgetArchive.Outcome outcome;
         Trace($"output: {targetDir ?? "game folder"}");
-        try { outcome = BudgetArchive.Build(result, plan, modRoot, Log, status, threads, Trace, targetDir); }
+        try { outcome = BudgetArchive.Build(result, plan, modRoot, Log, status, threads, Trace, targetDir, fixDirs); }
         finally { buildDone.Set(); ui.Join(2000); }
         if (targetDir != null) WriteSetting(settingsFile, "fixdir", targetDir);
         Trace($"finished: {outcome.Textures} written, {outcome.Skipped.Count} skipped, {started.Elapsed.TotalSeconds:0}s");

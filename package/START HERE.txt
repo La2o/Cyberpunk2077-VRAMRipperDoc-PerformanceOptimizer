@@ -26,7 +26,8 @@ Double-click the numbered files in order:
       in the same save to see the difference.
 
   Undo budget fix.bat
-      Removes the extra file from step 2. Everything is back as it was.
+      Removes the extra file from step 2, wherever it was saved (also the
+      MO2 mod "VRAM RipperDoc Budget Fix"). Everything is back as it was.
 
 Reports are saved next to these files (VRAM-RipperDoc-Report.html).
 Advanced options: open a terminal here and run  VramRipperdoc.exe --help

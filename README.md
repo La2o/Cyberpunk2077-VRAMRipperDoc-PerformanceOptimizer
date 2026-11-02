@@ -44,7 +44,7 @@ Open `tools\VRAM RipperDoc\` and double-click the numbered shortcuts (`START HER
 | `1 - Scan my mods.bat` | Scans and opens `VRAM-RipperDoc-Report.html`. Changes nothing. |
 | `2 - Apply budget fix.bat` | Asks first, then writes the one extra budget archive. |
 | `3 - Measure VRAM in game.bat` | Asks for a name (for example *before* or *after*), then records real VRAM until you close the game. |
-| `Undo budget fix.bat` | Removes the budget archive. |
+| `Undo budget fix.bat` | Removes the budget archive wherever it was saved: the game folder, the MO2 mod "VRAM RipperDoc Budget Fix", or MO2's Overwrite folder (fixes made with v0.2.4 or older). |
 
 Everything is also available from the command line:
 

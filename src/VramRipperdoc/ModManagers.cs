@@ -60,7 +60,12 @@ public sealed class ModManagers
     }
 
     /// <summary>The real (non-virtual) mods folder of an MO2 instance, or null.</summary>
-    public static string? Mo2ModsDir(string instance)
+    public static string? Mo2ModsDir(string instance) => Mo2Dir(instance, "mod_directory", "mods");
+
+    /// <summary>The real Overwrite folder of an MO2 instance (where new files made through MO2 land), or null.</summary>
+    public static string? Mo2OverwriteDir(string instance) => Mo2Dir(instance, "overwrite_directory", "overwrite");
+
+    static string? Mo2Dir(string instance, string key, string fallback)
     {
         try
         {
@@ -69,11 +74,23 @@ public sealed class ModManagers
             string Unwrap(string? v) => v == null ? "" : Regex.Replace(v, @"^@ByteArray\((.*)\)$", "$1").Replace(@"\\", @"\").Replace('/', '\\');
             var baseDir = Unwrap(ini.GetValueOrDefault("base_directory"));
             if (baseDir.Length == 0) baseDir = instance;
-            var modsDir = Unwrap(ini.GetValueOrDefault("mod_directory")).Replace("%BASE_DIR%", baseDir);
-            if (modsDir.Length == 0) modsDir = Path.Combine(baseDir, "mods");
-            return Directory.Exists(modsDir) ? modsDir : null;
+            var dir = Unwrap(ini.GetValueOrDefault(key)).Replace("%BASE_DIR%", baseDir);
+            if (dir.Length == 0) dir = Path.Combine(baseDir, fallback);
+            return Directory.Exists(dir) ? dir : null;
         }
         catch { return null; }
+    }
+
+    /// <summary>A portable MO2 instance this tool sits inside (installed as an MO2 mod and started from there), or null.</summary>
+    public static string? Mo2InstanceAround(string dir)
+    {
+        try
+        {
+            for (var d = new DirectoryInfo(dir); d != null; d = d.Parent)
+                if (File.Exists(Path.Combine(d.FullName, "ModOrganizer.ini"))) return d.FullName;
+        }
+        catch { }
+        return null;
     }
 
     /// <summary>
