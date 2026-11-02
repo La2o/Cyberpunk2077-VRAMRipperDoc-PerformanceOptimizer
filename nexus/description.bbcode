@@ -5,7 +5,7 @@
 Anyone with lots of texture, clothing, character, vehicle or environment mods. It matters most on [b]8–16 GB cards[/b], but big 4K texture packs can fill even a [b]24 GB[/b] card. When VRAM runs out you get stutter, blurry textures popping in, or crashes. If you're not short on VRAM this won't raise your FPS, but the report still finds broken and useless files.
 
 [size=4][b]Quick start (3 double-clicks)[/b][/size]
-After installing, open [i]Cyberpunk 2077\tools\VRAM RipperDoc\[/i] and double-click:
+Close the game first. Then open [i]Cyberpunk 2077\tools\VRAM RipperDoc\[/i] and double-click:
 [list=1]
 [*][b]1 - Scan my mods.bat[/b]: checks every texture and mesh mod and opens a report in your browser. Changes nothing. With a big mod list this takes a few minutes; a progress counter shows how far it is. Using Mod Organizer 2? If no mods are found, it asks for your MO2 folder once and remembers it.
 [*][b]2 - Apply budget fix.bat[/b] [i](optional)[/i]: if the report says you're over budget, this adds [b]one extra file[/b] with half-size copies of only your heaviest textures. It scans first, then shows how many textures it would shrink, how big the file will be and roughly how long it takes, and asks before writing anything. A second question covers the 4K textures of new clothing, cars and props. A "Writing fix: X / Y" counter shows progress, and when it's done it says what it did and shows the new file in Explorer. Your mods stay exactly as they are.
@@ -38,6 +38,9 @@ No requirements. It runs on its own (Windows 10/11, 64-bit).
 
 [size=4][b]FAQ[/b][/size]
 [spoiler]
+[b]A "Cyber Engine Tweaks" box says "Failed to get ...\VRAM RipperDoc\version.dll handle" and the tool closes.[/b]
+Fixed in v0.2.7, please update. Older versions accidentally loaded the game's mod loaders (RED4ext/CET) into the tool, and CET then shut it down. Your CET install is fine.
+
 [b]Is it safe? Does it change my mods?[/b]
 Scanning only reads files. The optional budget fix adds one new file ([i]archive\pc\mod\!RipperDoc_Budget.archive[/i]) and never edits your mods. Delete that file, or run Undo budget fix, to go back.
 
@@ -58,7 +61,7 @@ After [b]2 - Apply budget fix[/b] finishes, it opens Explorer with the new file 
 
 [b]The scan or the fix seems stuck / nothing opens.[/b]
 Big mod lists (thousands of archives) take a few minutes. Watch the "Scanning mods: X / Y" counter, and while the fix is being written, the "Writing fix: X / Y textures" counter with time left. The report opens in your browser when it's done, and is also saved as [i]VRAM-RipperDoc-Report.html[/i] next to the tool.
-[b]Please use v0.2.6 or newer.[/b] Versions 0.2.3 to 0.2.5 could hang forever right after "all textures done" if one of your mod archives has a space (or similar character) right after its leading "!" or starts with a space, e.g. "! Hairs.archive". The tool was stuck choosing the fix file's name. That's fixed. Through Mod Organizer 2 the fix is saved as a normal MO2 mod (see above), and clicking inside the black window no longer pauses it. If it ever stops moving for a minute, it says so. Please post the [i]VRAM-RipperDoc-Fix.log[/i] file from the tool's folder in the comments so I can fix it.
+[b]Please use v0.2.7 or newer.[/b] Versions 0.2.3 to 0.2.5 could hang forever right after "all textures done" if one of your mod archives has a space (or similar character) right after its leading "!" or starts with a space, e.g. "! Hairs.archive". The tool was stuck choosing the fix file's name. That's fixed. Through Mod Organizer 2 the fix is saved as a normal MO2 mod (see above), and clicking inside the black window no longer pauses it. If it ever stops moving for a minute, it says so. Please post the [i]VRAM-RipperDoc-Fix.log[/i] file from the tool's folder in the comments so I can fix it.
 A leftover [i]RipperDoc-....ripperdoc-tmp[/i] (or older [i].part[/i]) file is an unfinished fix. Running the fix or Undo again deletes it.
 
 [b]Does it work with Mod Organizer 2?[/b]

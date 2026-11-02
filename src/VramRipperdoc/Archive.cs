@@ -145,12 +145,39 @@ public static unsafe class Oodle
 
     public static string? LoadedFrom { get; private set; }
 
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    static extern IntPtr LoadLibraryExW(string lpLibFileName, IntPtr hFile, uint dwFlags);
+    const uint LOAD_LIBRARY_SEARCH_SYSTEM32 = 0x00000800;
+
+    /// <summary>
+    /// Loads oo2ext so that ITS dependencies (WINMM.dll, dbghelp.dll) come only from System32.
+    /// A plain load resolves them from the game's bin\x64 first, where RED4ext/CET put proxy
+    /// winmm.dll/version.dll loaders; those then run inside this tool and CET kills the process
+    /// ("Failed to get ...\version.dll handle", GitHub issue #1).
+    /// </summary>
+    static IntPtr LoadIsolated(string path)
+    {
+        var lib = LoadLibraryExW(path, IntPtr.Zero, LOAD_LIBRARY_SEARCH_SYSTEM32);
+        if (lib != IntPtr.Zero) return lib;
+        // Fallback: a private copy, so even the default search can't see the game's bin\x64.
+        try
+        {
+            var dir = Path.Combine(Path.GetTempPath(), "VRAM RipperDoc oodle");
+            Directory.CreateDirectory(dir);
+            var copy = Path.Combine(dir, Path.GetFileName(path));
+            if (!File.Exists(copy) || new FileInfo(copy).Length != new FileInfo(path).Length) File.Copy(path, copy, overwrite: true);
+            return LoadLibraryExW(copy, IntPtr.Zero, LOAD_LIBRARY_SEARCH_SYSTEM32);
+        }
+        catch { return IntPtr.Zero; }
+    }
+
     public static bool TryLoad(IEnumerable<string> candidates)
     {
         foreach (var path in candidates)
         {
             if (!File.Exists(path)) continue;
-            if (!NativeLibrary.TryLoad(path, out var lib)) continue;
+            var lib = OperatingSystem.IsWindows() ? LoadIsolated(Path.GetFullPath(path)) : (NativeLibrary.TryLoad(path, out var l) ? l : IntPtr.Zero);
+            if (lib == IntPtr.Zero) continue;
             if (!NativeLibrary.TryGetExport(lib, "OodleLZ_Decompress", out var fn)) continue;
             _decompress = (delegate* unmanaged<byte*, long, byte*, long, int, int, int, long, long, long, long, long, long, int, long>)fn;
             if (NativeLibrary.TryGetExport(lib, "OodleLZ_Compress", out var cfn))
