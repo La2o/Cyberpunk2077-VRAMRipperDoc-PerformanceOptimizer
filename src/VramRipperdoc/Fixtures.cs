@@ -155,3 +155,36 @@ public static class IngameTest
         return 0;
     }
 }
+
+/// <summary>Developer speed test: a fake "new clothing" mod made of N real 4K textures under new paths.</summary>
+public static class HeavyFixture
+{
+    public static int Make(string game, string outRoot, int count)
+    {
+        Oodle.TryLoad(new[] { Path.Combine(game, "bin", "x64", "oo2ext_7_win64.dll") });
+        var w = new ArchiveWriter();
+        int n = 0;
+        var sources = new[] { "basegame_4_appearance", "basegame_3_nightcity" }
+            .Select(name => new RdarArchive(Path.Combine(game, "archive", "pc", "content", name + ".archive"))).ToList();
+        var picks = new List<(RdarArchive Src, ArchiveEntry E)>();
+        foreach (var src in sources)
+            foreach (var e in src.Entries)
+            {
+                var segs = src.SegmentsOf(e).ToList();
+                if (segs.Count != 2 || segs[1].Size < 16 << 20) continue; // 4K BC7 and up
+                var head = src.ReadSegment(segs[0]);
+                if (head == null || head[0] != 'C' || new Cr2wFile(head).RootClass != "CBitmapTexture") continue;
+                picks.Add((src, e));
+            }
+        // Vanilla has few 4K textures, so reuse them under different paths to reach the requested count.
+        for (int i = 0; picks.Count > 0 && n < count; i++)
+        {
+            var (src, e) = picks[i % picks.Count];
+            w.Add(src, e, Fnv1a64.Hash($@"heavymod\textures\t{n++}.xbm"));
+        }
+        foreach (var s in sources) s.Dispose();
+        w.Write(Path.Combine(outRoot, "archive", "pc", "mod", "HeavyOutfits.archive"));
+        Console.WriteLine($"{n} 4K textures written to {outRoot}");
+        return 0;
+    }
+}

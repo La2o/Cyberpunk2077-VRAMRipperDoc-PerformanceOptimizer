@@ -31,7 +31,7 @@ Usage: VramRipperdoc [options]
 """;
 
 var flags = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-    { "no-vanilla", "no-open", "json", "help", "pause", "make-budget-archive", "include-new-items", "remove-budget-archive", "live", "share", "ask-mo2" };
+    { "no-vanilla", "no-open", "json", "help", "pause", "make-budget-archive", "include-new-items", "remove-budget-archive", "live", "share", "ask-mo2", "ask" };
 var opts = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
 for (int i = 0; i < args.Length; i++)
 {
@@ -54,6 +54,8 @@ if (opts.TryGetValue("verify-shrink", out var shrinkArchive) && shrinkArchive !=
 }
 if (opts.TryGetValue("ingame-test", out var ingameCount) && ingameCount != null)
     return IngameTest.Make(FindGame(opts.GetValueOrDefault("game"))!, int.Parse(ingameCount), opts.ContainsKey("copy-only"));
+if (opts.TryGetValue("make-heavy", out var heavyOut) && heavyOut != null)
+    return HeavyFixture.Make(FindGame(null)!, heavyOut, int.Parse(opts.GetValueOrDefault("count") ?? "300"));
 if (opts.TryGetValue("make-fixtures", out var fixturesOut) && fixturesOut != null)
     return Fixtures.Make(FindGame(opts.GetValueOrDefault("game")) ?? throw new Exception("game not found"), fixturesOut);
 
@@ -170,17 +172,74 @@ if (makingFix)
 {
     Console.WriteLine();
     Console.WriteLine(new string('=', 72));
+    bool asked = false;
+    if (opts.ContainsKey("ask") && !quiet)
+    {
+        // Show what each choice involves (counts, size, rough time) before asking.
+        asked = true;
+        var normal = BudgetPlan.Build(result, budget, includeNew: false);
+        var newSteps = BudgetPlan.Build(result, budget, includeNew: true).Steps.Where(s => !s.Asset.AlwaysLoaded).ToList();
+        var chosen = new List<PlanStep>();
+        if (normal.Current <= normal.Budget)
+            Console.WriteLine($"Normal play: your mods add about {Report.Size(normal.Current)}, within your {Report.Size(normal.Budget)} budget. Nothing to fix there.");
+        else if (normal.Steps.Count == 0)
+            Console.WriteLine($"Normal play: {Report.Size(normal.Current - normal.Budget)} over budget, but no texture is big enough to halve. Swap the heaviest mod for a lighter version instead.");
+        else
+        {
+            Console.WriteLine($"Normal play: {Report.Size(normal.Current - normal.Budget)} over your {Report.Size(normal.Budget)} budget.");
+            Console.WriteLine($"  Fix: halve {normal.Steps.Count:N0} texture(s), saving about {Report.Size(normal.Steps.Sum(s => s.Saves))}. {Describe(normal.Steps)}");
+            if (Ask("Halve these textures?")) chosen.AddRange(normal.Steps);
+        }
+        Console.WriteLine();
+        if (newSteps.Count == 0)
+            Console.WriteLine("New clothing, cars and props: none have 4K textures. Nothing to shrink there.");
+        else
+        {
+            Console.WriteLine($"New clothing, cars and props: {newSteps.Count:N0} texture(s) are 4K. They only use VRAM while you wear, drive or spawn them.");
+            Console.WriteLine($"  Shrinking them to 2K saves up to {Report.Size(newSteps.Sum(s => s.Saves))} while they're in use. {Describe(newSteps)}");
+            if (Ask("Also shrink these to 2K?")) chosen.AddRange(newSteps);
+        }
+        plan.Steps = chosen;
+        Console.WriteLine();
+    }
     if (plan.Steps.Count == 0)
     {
-        Console.WriteLine(plan.Current <= plan.Budget
-            ? "Nothing to fix: during normal play your mods already fit your VRAM budget."
-            : "Nothing to fix: none of your mods' textures are big enough to halve (2K or larger).");
-        if (!plan.IncludeNew && result.WhenUsedDelta > 0)
-            Console.WriteLine("New clothing, cars and props were left alone. Run the fix again and answer Y to the second question to shrink their 4K textures too.");
+        if (asked) Console.WriteLine("Nothing was changed.");
+        else
+        {
+            Console.WriteLine(plan.Current <= plan.Budget
+                ? "Nothing to fix: during normal play your mods already fit your VRAM budget."
+                : "Nothing to fix: none of your mods' textures are big enough to halve (2K or larger).");
+            if (!plan.IncludeNew && result.WhenUsedDelta > 0)
+                Console.WriteLine("New clothing, cars and props were left alone (add --include-new-items to shrink their 4K textures too).");
+        }
     }
     else
     {
-        var outcome = BudgetArchive.Build(result, plan, modRoot, Log);
+        Console.WriteLine($"Writing the fix: {plan.Steps.Count:N0} texture(s). Leave this window open until it says DONE.");
+        var started = System.Diagnostics.Stopwatch.StartNew();
+        int lastShown = -1;
+        var writeLock = new object();
+        void WriteProgress(int done, int total)
+        {
+            lock (writeLock)
+            {
+                int pct = done * 100 / Math.Max(1, total);
+                if (pct == lastShown && done != total) return;
+                lastShown = pct;
+                string eta = "";
+                if (done >= 5 && done < total)
+                {
+                    var left = TimeSpan.FromSeconds(started.Elapsed.TotalSeconds / done * (total - done));
+                    eta = left.TotalMinutes >= 1 ? $" · about {Math.Ceiling(left.TotalMinutes)} min left" : $" · about {Math.Ceiling(left.TotalSeconds)} s left";
+                }
+                Console.Write($"\r  Writing fix: {done:N0} / {total:N0} textures ({pct}%){eta}        ");
+                if (done == total) Console.WriteLine();
+            }
+        }
+        var outcome = BudgetArchive.Build(result, plan, modRoot, Log, WriteProgress);
+        Console.WriteLine($"  Finished in {started.Elapsed.TotalSeconds:0}s.");
+        Console.WriteLine();
         result.BudgetArchive = outcome.Path;
         Console.WriteLine($"DONE: {outcome.Textures} texture(s) halved, saving up to {Report.Size(outcome.SavedBytes)} of VRAM.");
         Console.WriteLine();
@@ -230,6 +289,35 @@ void Pause()
 {
     // Double-clicked (no args): keep the window open so the summary can be read.
     if ((args.Length == 0 || opts.ContainsKey("pause")) && !Console.IsInputRedirected) { Console.WriteLine("Press any key to close."); Console.ReadKey(true); }
+}
+
+// Y/N question; works with a keyboard or piped input.
+bool Ask(string question)
+{
+    while (true)
+    {
+        Console.Write($"{question} [Y/N] ");
+        string? answer;
+        if (Console.IsInputRedirected) answer = Console.ReadLine();
+        else { var k = Console.ReadKey(intercept: true); answer = k.KeyChar.ToString(); }
+        if (answer == null) { Console.WriteLine("N"); return false; }
+        answer = new string(answer.Where(char.IsLetter).ToArray()).ToUpperInvariant(); // ignores BOMs and stray characters
+        if (answer.StartsWith('Y')) { Console.WriteLine("Y"); return true; }
+        if (answer.StartsWith('N')) { Console.WriteLine("N"); return false; }
+        if (!Console.IsInputRedirected) Console.WriteLine();
+    }
+}
+
+// "About 240 MB to write, under a minute": size scales the halved data by each texture's compression ratio;
+// time assumes ~120 MB/s of source texture per worker thread (measured on a mid-range desktop).
+static string Describe(IReadOnlyCollection<PlanStep> steps)
+{
+    long bytes = BudgetArchive.EstimateBytes(steps);
+    double srcMb = steps.Sum(s => (double)s.Asset.GpuBytes) / (1 << 20);
+    int workers = Math.Clamp(Environment.ProcessorCount - 1, 1, 8);
+    double seconds = srcMb / (120.0 * workers) + steps.Count * 0.01;
+    string time = seconds < 60 ? "under a minute" : $"roughly {Math.Ceiling(seconds / 60)} minute(s)";
+    return $"About {Report.Size(bytes)} to write, {time}.";
 }
 
 string? AskForMo2()

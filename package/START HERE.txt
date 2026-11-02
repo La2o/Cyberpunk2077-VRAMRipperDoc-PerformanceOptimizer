@@ -12,9 +12,11 @@ Double-click the numbered files in order:
   2 - Apply budget fix.bat   (optional)
       If the report says you are over budget, this adds ONE extra file with
       half-size copies of only the heaviest textures. Your mods are not changed.
-      It asks a second question: whether to also shrink 4K textures of new
-      clothing, cars and props (they only use VRAM while you use them).
-      When it is done, it shows the new file in Explorer.
+      It scans first, then shows how many textures it would shrink, how big the
+      file will be and roughly how long it takes, and asks before writing.
+      A second question covers 4K textures of new clothing, cars and props
+      (they only use VRAM while you use them). A progress counter shows how far
+      it is; when it is done it shows the new file in Explorer.
 
   3 - Measure VRAM in game.bat   (optional)
       Records how much video memory the game really uses while you play.

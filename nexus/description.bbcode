@@ -8,7 +8,7 @@ Anyone with lots of texture, clothing, character, vehicle or environment mods. I
 After installing, open [i]Cyberpunk 2077\tools\VRAM RipperDoc\[/i] and double-click:
 [list=1]
 [*][b]1 - Scan my mods.bat[/b]: checks every texture and mesh mod and opens a report in your browser. Changes nothing. With a big mod list this takes a few minutes; a progress counter shows how far it is. Using Mod Organizer 2? If no mods are found, it asks for your MO2 folder once and remembers it.
-[*][b]2 - Apply budget fix.bat[/b] [i](optional)[/i]: if the report says you're over budget, this adds [b]one extra file[/b] with half-size copies of only your heaviest textures. It asks first, then asks whether to also shrink the 4K textures of new clothing, cars and props. When it's done it says what it did and shows the new file in Explorer. Your mods stay exactly as they are.
+[*][b]2 - Apply budget fix.bat[/b] [i](optional)[/i]: if the report says you're over budget, this adds [b]one extra file[/b] with half-size copies of only your heaviest textures. It scans first, then shows how many textures it would shrink, how big the file will be and roughly how long it takes, and asks before writing anything. A second question covers the 4K textures of new clothing, cars and props. A "Writing fix: X / Y" counter shows progress, and when it's done it says what it did and shows the new file in Explorer. Your mods stay exactly as they are.
 [*][b]3 - Measure VRAM in game.bat[/b] [i](optional)[/i]: records how much VRAM the game really uses while you play. Run it once named "before" and once named "after" (same save, same spot) to see what changed.
 [/list]
 Changed your mind? Double-click [b]Undo budget fix.bat[/b] and everything is back as it was.
@@ -53,8 +53,8 @@ No. That's every piece of clothing, every car and every prop you have installed,
 [b]Where is the fix file? I can't find it.[/b]
 After [b]2 - Apply budget fix[/b] finishes, it opens Explorer with the new file selected: [i]archive\pc\mod\!RipperDoc_Budget.archive[/i]. If it says "Nothing to fix", your mods already fit (answer Y to the second question to shrink new items' 4K textures anyway). If you run it through Mod Organizer 2, MO2 puts the file in its [i]Overwrite[/i] folder; that works, or right-click Overwrite > Create mod to keep it tidy.
 
-[b]The scan seems stuck / nothing opens.[/b]
-Big mod lists (thousands of archives) take a few minutes. Watch the "Scanning mods: X / Y" counter. The report opens in your browser when it's done, and is also saved as [i]VRAM-RipperDoc-Report.html[/i] next to the tool.
+[b]The scan or the fix seems stuck / nothing opens.[/b]
+Big mod lists (thousands of archives) take a few minutes. Watch the "Scanning mods: X / Y" counter, and while the fix is being written, the "Writing fix: X / Y textures" counter with time left. (Before v0.2.3 the writing step showed no progress and could be slow on huge lists; update if you're on an older version.) The report opens in your browser when it's done, and is also saved as [i]VRAM-RipperDoc-Report.html[/i] next to the tool.
 
 [b]Does it work with Mod Organizer 2?[/b]
 Yes. It looks for your MO2 setup automatically. If no mods are found, [b]1 - Scan my mods[/b] asks for your MO2 folder (the one with ModOrganizer.ini) once and remembers it. You can also run it from inside MO2 as an executable.
