@@ -88,10 +88,11 @@ Use it [i]alongside[/i] any of these.
 [*]Reads the game's load order (archive\pc\mod in ASCII order or modlist.txt, then REDmod, plus MO2 mods outside the game folder). The first archive wins a conflict.
 [*]Parses RDAR archives and CR2W headers with the game's own Oodle DLL. Texture cost comes from the rendRenderTextureBlobPC buffer size, mesh triangles and LODs from rendRenderMeshBlob chunk infos.
 [*]Compares against the vanilla content and ep1 archives (about 550k files), so costs are deltas and only references the mod [i]added[/i] can count as missing.
+[*]"Normal play" = files that override vanilla plus new files reachable from them through references; everything else counts as "when used".
 [*]Flags: 4K/8K textures, no mipmaps, uncompressed textures, N× vanilla pixels or triangles, no LODs, dense meshes, missing hard imports, identical-to-vanilla files, duplicates, likely unused files.
 [*]The budget fix drops the top mip of each planned texture (no re-encoding). It rewrites sizes, offsets and every checksum, and writes a sorted, 4 KiB-aligned archive. Tested in game on 2.5.
 [*]The live monitor reads Windows "GPU Process Memory" performance counters, the same source as Task Manager.
-[*]Command line: [i]VramRipperdoc.exe --help[/i] (--budget, --json, --hashes, --share, --community and more).
+[*]Command line: [i]VramRipperdoc.exe --help[/i] (--budget, --include-new-items, --json, --hashes, --share, --community and more).
 [/list]
 Source code (MIT): [url=https://github.com/La2o/Cyberpunk2077-VRAMRipperDoc-PerformanceOptimizer]GitHub[/url]
 [/spoiler]
