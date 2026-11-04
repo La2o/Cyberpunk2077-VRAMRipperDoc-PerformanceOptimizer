@@ -14,7 +14,7 @@ Script profilers show what redscript and CET mods cost. Nothing showed what *ass
 
 Then it:
 
-- Suggests a **VRAM budget** from your GPU and your in-game settings (resolution, texture quality, RT/PT, frame generation)
+- Works out the **room for mods**: how much VRAM your mods can add on top of the game itself, from your GPU and your in-game settings (resolution, texture quality, RT/PT, frame generation). If you're over, it also says which setting changes give the most room.
 - Lists which textures to halve to fit that budget, and can **apply the plan** as one separate, removable archive (`--make-budget-archive`)
 - **Measures real VRAM** while you play (`--live`), so you can compare before and after
 - Shows **what changed since your last scan**, and gives you a **copy-paste summary** for support threads

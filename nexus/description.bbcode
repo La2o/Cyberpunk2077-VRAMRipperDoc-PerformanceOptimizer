@@ -20,7 +20,7 @@ Changed your mind? Double-click [b]Undo budget fix.bat[/b] and everything is bac
 [*][b]Broken or missing[/b]: corrupt downloads, and mods that need another mod you haven't installed (a common cause of crashes and invisible items)
 [*][b]Wasted files[/b]: files that never load because another mod overrides them, files identical to the normal game, and duplicates across mods
 [*][b]Which installed mod each file belongs to[/b] (works with Vortex and Mod Organizer 2), with a link to its Nexus page
-[*][b]Your budget[/b]: how much VRAM your mods can use on your graphics card at your in-game settings
+[*][b]Room for mods[/b]: how much VRAM your mods can add [i]on top of the game itself[/i] on your graphics card at your in-game settings, and which setting changes give more room
 [/list]
 
 [size=4][b]Reading the report[/b][/size]
@@ -52,6 +52,9 @@ Only the textures the fix shrinks, and only to half size. That's the same smalle
 
 [b]How much VRAM will I save?[/b]
 It depends on your mods and what's on screen. The report estimates the maximum; [b]3 - Measure VRAM in game[/b] shows the real number. In our test with [i]no texture mods at all[/i] (the worst case for this tool), halving 360 of the game's own textures saved about 120 MB at one spot in the Badlands. Heavy texture modlists have far more to trim.
+
+[b]My card has 8 GB (or 16 GB) but the room for mods is much smaller. Why?[/b]
+The room for mods (called "budget" before v0.2.9) is not your total or free VRAM. It's what's left for your mods [i]after the game itself[/i]: your card's VRAM, minus what the game needs at your settings, minus about 0.6 GB for Windows. Example: an 8 GB card at 2560x1440 with High textures and frame generation leaves almost nothing (8.0 - 7.3 - 0.6), so the tool shows its minimum of 256 MB. A 16 GB card at the same settings with path tracing leaves about 6 GB. The report shows the full sum under "How the room for mods is worked out". When you're over, it also lists the setting changes that give more room, for example Texture Quality Medium (about +0.8 GB) or frame generation off (about +0.5 GB). Running out of VRAM usually shows up as stutter, or as drops lasting a few seconds when you open or close menus. RipperDoc doesn't limit your VRAM, and it doesn't run while you play.
 
 [b]How do I read "Normal play" and "When used"?[/b]
 [b]Normal play[/b] is what the mod costs whenever the things it replaces are on screen. [b]When used[/b] comes [i]on top of that[/i], only while you wear, drive or spawn the mod's new items. Example: a mod showing 11 MB normal play / 1.09 GB when used costs 11 MB most of the time, and up to about 1.1 GB more while its new items are in use. A [b]negative[/b] Normal play number means the mod makes the game [i]lighter[/i] than vanilla, for example with smaller textures or by removing objects from the world.

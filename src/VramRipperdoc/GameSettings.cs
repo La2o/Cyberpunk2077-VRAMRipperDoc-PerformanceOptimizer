@@ -65,6 +65,23 @@ public sealed class GameSettings
         return (long)(gb * (1L << 30));
     }
 
+    /// <summary>Setting changes that give mods more room, with the VRAM each frees by the same rule of thumb.</summary>
+    public List<(string Change, long Frees)> RoomTips()
+    {
+        static long Gb(double v) => (long)(v * (1L << 30));
+        var tips = new List<(string, long)>();
+        switch (TextureQuality.ToLowerInvariant())
+        {
+            case "low": break;
+            case "medium": tips.Add(("Texture Quality Low", Gb(0.7))); break;
+            default: tips.Add(("Texture Quality Medium", Gb(0.8))); break;
+        }
+        if (PathTracing) tips.Add(("path tracing off (ray tracing can stay on)", Gb(1.0)));
+        else if (RayTracing) tips.Add(("ray tracing off", Gb(1.0)));
+        if (FrameGen) tips.Add(("frame generation off", Gb(0.5)));
+        return tips;
+    }
+
     public string Describe() =>
         $"{(Width > 0 ? $"{Width}x{Height}" : "unknown resolution")}, {TextureQuality} textures"
         + (PathTracing ? ", path tracing" : RayTracing ? ", ray tracing" : "") + (FrameGen ? ", frame generation" : "");

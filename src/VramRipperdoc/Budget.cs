@@ -50,8 +50,12 @@ public sealed record GpuInfo(string Name, long VramBytes)
         if (s == null || s.Width == 0)
             return (SuggestedModBudget(vram), "rule of thumb for your VRAM (game settings not found)");
         long vanilla = s.EstimatedVanillaBytes();
-        long budget = Math.Max(256L << 20, vram - (600L << 20) - vanilla);
-        return (budget, $"{Report.Size(vram)} VRAM - ~{Report.Size(vanilla)} vanilla at {s.Describe()} - 0.6 GB for Windows");
+        long left = vram - (600L << 20) - vanilla;
+        long budget = Math.Max(256L << 20, left);
+        string sum = $"{Report.Size(vram)} card - ~{Report.Size(vanilla)} the game itself needs at {s.Describe()} - 0.6 GB for Windows";
+        return (budget, left >= budget
+            ? $"{sum} = {Report.Size(budget)}"
+            : $"{sum} leaves almost nothing, so the minimum of {Report.Size(budget)} is used");
     }
 }
 

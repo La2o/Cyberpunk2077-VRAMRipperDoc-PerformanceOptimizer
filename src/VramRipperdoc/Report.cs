@@ -41,7 +41,8 @@ public static class Report
         }
         if (r.Mods.Count > top) Console.WriteLine($"    ... {r.Mods.Count - top} more in the report.");
         Console.WriteLine();
-        Console.WriteLine($"Your budget: {Size(plan.Budget)} extra during normal play  ({r.BudgetWhy})");
+        Console.WriteLine($"Room for your mods: {Size(plan.Budget)} on top of the game itself, during normal play");
+        Console.WriteLine($"  ({r.BudgetWhy})");
         if (plan.Current <= plan.Budget)
             Console.WriteLine("  -> OK: your mods fit. Nothing needs fixing.");
         else if (r.BudgetArchive != null)
@@ -57,8 +58,15 @@ public static class Report
             if (r.BudgetArchive == null && plan.Steps.Count > 0)
                 Console.WriteLine("  To apply: double-click \"2 - Apply budget fix.bat\" (your mods are not modified; \"Undo budget fix.bat\" removes it).");
         }
+        if (plan.Current > plan.Budget && SettingsTips(r) is { Length: > 0 } tips)
+            Console.WriteLine($"  Lower settings also give mods more room (estimates): {tips}.");
         foreach (var l in r.HistoryDiff) Console.WriteLine(l);
     }
+
+    /// <summary>"Texture Quality Medium +0.8 GB, frame generation off +0.5 GB", or "" when the settings are unknown.</summary>
+    public static string SettingsTips(ScanResult r) => r.Settings is { Width: > 0 } s
+        ? string.Join(", ", s.RoomTips().Select(t => $"{t.Change} +{t.Frees / (double)(1L << 30):0.0} GB"))
+        : "";
 
     public static void WriteJson(ScanResult r, BudgetPlan plan, Stream s, int maxAssetsPerMod = int.MaxValue)
     {
@@ -80,7 +88,7 @@ public static class Report
         w.WriteStartArray("history"); foreach (var l in r.HistoryDiff) w.WriteStringValue(l); w.WriteEndArray();
         w.WriteStartArray("managerNotes"); foreach (var l in r.ManagerNotes) w.WriteStringValue(l); w.WriteEndArray();
         w.WriteStartObject("budget");
-        w.WriteNumber("budget", plan.Budget); w.WriteString("why", r.BudgetWhy);
+        w.WriteNumber("budget", plan.Budget); w.WriteString("why", r.BudgetWhy); w.WriteString("tips", SettingsTips(r));
         w.WriteNumber("current", plan.Current); w.WriteNumber("afterPlan", plan.AfterPlan);
         w.WriteNumber("whenUsed", plan.WhenUsed); w.WriteBoolean("includeNew", plan.IncludeNew); w.WriteNumber("newItemSaves", plan.NewItemSaves);
         w.WriteStartArray("steps");
@@ -188,17 +196,18 @@ const $=s=>document.querySelector(s),esc=s=>String(s).replace(/[&<>"]/g,c=>({'&'
 const sz=b=>{const s=b<0?'-':'',v=Math.abs(b);return v>=2**30?s+(v/2**30).toFixed(2)+' GB':v>=2**20?s+(v/2**20).toFixed(1)+' MB':v>=1024?s+(v/1024).toFixed(0)+' KB':s+v+' B'};
 $('#sub').textContent=`${D.mods.length} mod archive(s) · ${D.gameDir} · ${D.generated} · v${D.version}`+(D.settings?` · ${D.settings}`:'')+(D.oodle?'':' · Oodle missing: sizes only');
 const flagged=D.mods.reduce((a,m)=>a+m.flagged,0),dead=D.mods.reduce((a,m)=>a+m.shadowedDisk,0),miss=D.mods.reduce((a,m)=>a+m.missing,0);
-$('#cards').innerHTML=[['Extra VRAM in normal play',sz(D.alwaysDelta)],['New items (only when used)',sz(D.whenUsedDelta)],['GPU',D.gpu?sz(D.gpuVram):'unknown'],['Your budget (normal play)',sz(D.budget.budget)],['Flagged files',flagged.toLocaleString()],['Missing references',miss.toLocaleString()],['Dead weight (never loads)',sz(dead)]]
+$('#cards').innerHTML=[['Extra VRAM in normal play',sz(D.alwaysDelta)],['New items (only when used)',sz(D.whenUsedDelta)],['GPU',D.gpu?sz(D.gpuVram):'unknown'],['Room for mods (normal play)',sz(D.budget.budget)],['Flagged files',flagged.toLocaleString()],['Missing references',miss.toLocaleString()],['Dead weight (never loads)',sz(dead)]]
  .map(([k,v])=>`<div class="card"><div class="k">${k}</div><div class="v">${v}</div></div>`).join('');
 const B=D.budget,stepsAlways=B.steps.filter(s=>s.always).length;let bh=`<h2>Budget</h2>`;
 if(D.budgetArchive)bh+=`<p class="ok">The budget fix is active (<code>${esc(D.budgetArchive)}</code>). To remove it, double-click <b>Undo budget fix.bat</b>.</p>`;
-if(B.current<=B.budget)bh+=`<p class="ok">During normal play your mods add about <b>${sz(B.current)}</b>, within your ${sz(B.budget)} budget. Nothing needs fixing.</p>`;
-else if(D.budgetArchive)bh+=`<p>Without the fix your mods would add about ${sz(B.current)} during normal play (${sz(B.current-B.budget)} over). The fix brings this to about <b>${sz(B.afterPlan)}</b>${B.afterPlan<=B.budget?', within budget':'; to go lower, remove or swap the heaviest mod below'}.</p>`;
-else{bh+=`<p class="warn">During normal play your mods add about <b>${sz(B.current)}</b>, which is ${sz(B.current-B.budget)} over your ${sz(B.budget)} budget.</p>`;
+if(B.current<=B.budget)bh+=`<p class="ok">During normal play your mods add about <b>${sz(B.current)}</b> on top of the game itself. At your settings your card has room for ${sz(B.budget)} of that, so nothing needs fixing.</p>`;
+else if(D.budgetArchive)bh+=`<p>Without the fix your mods would add about ${sz(B.current)} on top of the game during normal play, ${sz(B.current-B.budget)} more than the ${sz(B.budget)} of room your card has. The fix brings this to about <b>${sz(B.afterPlan)}</b>${B.afterPlan<=B.budget?', which fits':'; to go lower, remove or swap the heaviest mod below'}.</p>`;
+else{bh+=`<p class="warn">During normal play your mods add about <b>${sz(B.current)}</b> on top of the game itself, but at your settings your card only has room for ${sz(B.budget)}: ${sz(B.current-B.budget)} too much.</p>`;
  bh+=B.afterPlan<=B.budget?`<p>Halving ${stepsAlways} texture(s) fixes it. <b>To apply: double-click <i>2 - Apply budget fix.bat</i></b>. It adds one extra file and never changes your mods; <i>Undo budget fix.bat</i> removes it.</p>`:`<p>Halving the biggest textures gets you to ${sz(B.afterPlan)}. To go lower, remove or swap the heaviest mod at the top of the table below. <b>To apply what can be done: double-click <i>2 - Apply budget fix.bat</i></b>.</p>`;}
-bh+=`<p class="note">New items add up to ${sz(B.whenUsed)} if every one of them were used at once, which never happens, so they don't count against the budget. <i>2 - Apply budget fix</i> can also halve their 4K textures if you say yes when it asks.</p>`;
+if(B.current>B.budget&&B.tips)bh+=`<p>Lower settings also give mods more room (estimates): ${esc(B.tips)}.</p>`;
+bh+=`<p class="note">New items add up to ${sz(B.whenUsed)} if every one of them were used at once, which never happens, so they don't count against this room. <i>2 - Apply budget fix</i> can also halve their 4K textures if you say yes when it asks.</p>`;
 if(B.steps.length)bh+=`<details><summary class="note">Show the ${B.steps.length} texture(s) the fix would halve</summary><table><tr><th class="l">Mod</th><th class="l">File</th><th class="l">Type</th><th>Now</th><th>After</th><th>Saves</th></tr>`+B.steps.slice(0,60).map(s=>`<tr><td class="l">${esc(s.mod)}</td><td class="l name" title="${esc(s.asset)}">${esc(s.asset)}</td><td class="l">${s.always?'normal play':'new item'}</td><td>${s.from}px</td><td>${s.to}px</td><td>${sz(s.saves)}</td></tr>`).join('')+'</table>'+(B.steps.length>60?`<p class="note">+${B.steps.length-60} more in the JSON report</p>`:'')+'</details>';
-$('#budget').innerHTML=bh+`<p class="note">How the budget is worked out: ${esc(B.why)}.</p>`;
+$('#budget').innerHTML=bh+`<p class="note">How the room for mods is worked out: ${esc(B.why)}.</p>`;
 if(D.history.length||D.managerNotes.length){$('#hist').hidden=false;$('#hist').innerHTML=`<h2>Changes &amp; sources</h2><pre>${esc([...D.managerNotes,...D.history].join('\n'))}</pre>`;}
 const cols=[['priority','#'],['name','Mod archive','l'],['always','Normal play'],['bar',''],['whenUsed','+ When used'],['textures','Tex'],['meshes','Mesh'],['tris','Tris LOD0'],['overrides','Overrides'],['shadowed','Never loads'],['missing','Missing'],['flagged','Flags']];
 let sortK='always',sortD=-1,open=new Set();

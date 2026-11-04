@@ -209,15 +209,17 @@ if (makingFix)
         var newSteps = BudgetPlan.Build(result, budget, includeNew: true).Steps.Where(s => !s.Asset.AlwaysLoaded).ToList();
         var chosen = new List<PlanStep>();
         if (normal.Current <= normal.Budget)
-            Console.WriteLine($"Normal play: your mods add about {Report.Size(normal.Current)}, within your {Report.Size(normal.Budget)} budget. Nothing to fix there.");
+            Console.WriteLine($"Normal play: your mods add about {Report.Size(normal.Current)} on top of the game; your card has room for {Report.Size(normal.Budget)}. Nothing to fix there.");
         else if (normal.Steps.Count == 0)
-            Console.WriteLine($"Normal play: {Report.Size(normal.Current - normal.Budget)} over budget, but no texture is big enough to halve. Swap the heaviest mod for a lighter version instead.");
+            Console.WriteLine($"Normal play: your mods add {Report.Size(normal.Current - normal.Budget)} more than your card has room for, but no texture is big enough to halve. Swap the heaviest mod for a lighter version instead.");
         else
         {
-            Console.WriteLine($"Normal play: {Report.Size(normal.Current - normal.Budget)} over your {Report.Size(normal.Budget)} budget.");
+            Console.WriteLine($"Normal play: your mods add about {Report.Size(normal.Current)} on top of the game, but your card only has room for {Report.Size(normal.Budget)} ({Report.Size(normal.Current - normal.Budget)} too much).");
             Console.WriteLine($"  Fix: halve {normal.Steps.Count:N0} texture(s), saving about {Report.Size(normal.Steps.Sum(s => s.Saves))}. {Describe(normal.Steps)}");
             if (Ask("Halve these textures?")) chosen.AddRange(normal.Steps);
         }
+        if (normal.Current > normal.Budget && Report.SettingsTips(result) is { Length: > 0 } tips)
+            Console.WriteLine($"  Lower settings also give mods more room (estimates): {tips}.");
         Console.WriteLine();
         if (newSteps.Count == 0)
             Console.WriteLine("New clothing, cars and props: none have 4K textures. Nothing to shrink there.");
@@ -236,7 +238,7 @@ if (makingFix)
         else
         {
             Console.WriteLine(plan.Current <= plan.Budget
-                ? "Nothing to fix: during normal play your mods already fit your VRAM budget."
+                ? "Nothing to fix: during normal play your mods already fit in your card's VRAM."
                 : "Nothing to fix: none of your mods' textures are big enough to halve (2K or larger).");
             if (!plan.IncludeNew && result.WhenUsedDelta > 0)
                 Console.WriteLine("New clothing, cars and props were left alone (add --include-new-items to shrink their 4K textures too).");

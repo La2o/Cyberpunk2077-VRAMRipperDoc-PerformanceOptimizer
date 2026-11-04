@@ -60,13 +60,17 @@ public static class Summary
         var sb = new StringBuilder();
         sb.AppendLine($"**VRAM RipperDoc v{Report.Version}** · {r.Mods.Count} archive mods · **{Report.Size(r.AlwaysDelta)}** extra in normal play · {Report.Size(r.WhenUsedDelta)} in new items (only when used)");
         if (r.Gpu != null) sb.AppendLine($"GPU: {r.Gpu.Name} ({Report.Size(r.Gpu.VramBytes)})" + (r.Settings != null ? $" · {r.Settings.Describe()}" : ""));
-        sb.AppendLine($"Budget: {Report.Size(plan.Budget)} → {(plan.Current <= plan.Budget ? "within budget" : $"over by {Report.Size(plan.Current - plan.Budget)}")}");
+        sb.AppendLine($"Room for mods on top of the game: {Report.Size(plan.Budget)} ({r.BudgetWhy}) → {(plan.Current <= plan.Budget ? "fits" : $"{Report.Size(plan.Current - plan.Budget)} too much")}");
         if (r.BudgetArchive != null) sb.AppendLine($"Budget archive active: `{Path.GetFileName(r.BudgetArchive)}`");
         sb.AppendLine();
         sb.AppendLine("| Mod | Normal play | When used | Tex | Mesh | Flags |");
         sb.AppendLine("|---|---:|---:|---:|---:|---:|");
-        foreach (var m in r.Mods.Where(m => m.Error == null).OrderByDescending(m => m.AlwaysDelta).ThenByDescending(m => m.GpuDelta).Take(10))
-            sb.AppendLine($"| {m.Package ?? m.Name} | {Report.Size(m.AlwaysDelta)} | {Report.Size(m.WhenUsedDelta)} | {m.Textures} | {m.Meshes} | {m.FlagCount} |");
+        // One row per installed mod: a mod with several archives would otherwise show up several times under the same name.
+        var rows = r.Mods.Where(m => m.Error == null).GroupBy(m => m.Package ?? m.Name)
+            .Select(g => (Name: g.Count() > 1 ? $"{g.Key} ({g.Count()} archives)" : g.Key, Always: g.Sum(m => m.AlwaysDelta), WhenUsed: g.Sum(m => m.WhenUsedDelta),
+                Total: g.Sum(m => m.GpuDelta), Tex: g.Sum(m => m.Textures), Mesh: g.Sum(m => m.Meshes), Flags: g.Sum(m => m.FlagCount)));
+        foreach (var m in rows.OrderByDescending(m => m.Always).ThenByDescending(m => m.Total).Take(10))
+            sb.AppendLine($"| {m.Name} | {Report.Size(m.Always)} | {Report.Size(m.WhenUsed)} | {m.Tex} | {m.Mesh} | {m.Flags} |");
         var broken = r.Mods.Where(m => m.Error != null).ToList();
         if (broken.Count > 0) sb.AppendLine().AppendLine("**Broken archives:** " + string.Join(", ", broken.Select(b => $"`{b.Name}`")));
         var missing = r.Mods.Where(m => m.Missing > 0).ToList();
