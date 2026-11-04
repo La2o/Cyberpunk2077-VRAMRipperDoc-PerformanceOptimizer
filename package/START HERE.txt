@@ -29,6 +29,8 @@ Double-click the numbered files in order:
       Removes the extra file from step 2, wherever it was saved (also the
       MO2 mod "VRAM RipperDoc Budget Fix"). Everything is back as it was.
 
+This folder can live anywhere (game folder, Desktop, ...). If the tool can't
+find your game, it asks for the game folder once and remembers it.
 Reports are saved next to these files (VRAM-RipperDoc-Report.html).
 Advanced options: open a terminal here and run  VramRipperdoc.exe --help
 More info: README.md, or https://www.nexusmods.com/cyberpunk2077/mods/36878

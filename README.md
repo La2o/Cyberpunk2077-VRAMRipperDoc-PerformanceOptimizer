@@ -29,9 +29,11 @@ See [COMPARISON.md](COMPARISON.md) for how this differs from Ultra+, FrameFlow, 
 
 ## Install
 
-**Vortex / MO2:** install the zip like any other mod. It lands in `<Cyberpunk 2077>\tools\VRAM RipperDoc\`.
+**Manual (simplest):** extract the zip anywhere, for example into your Cyberpunk 2077 folder (the one that contains `bin` and `archive`) or onto your Desktop. The tool finds Steam, GOG and Epic installs by itself; if it can't, it asks for the game folder once and remembers it.
 
-**Manual:** extract the zip into your Cyberpunk 2077 folder (the one that contains `bin` and `archive`).
+**Vortex:** Vortex's Cyberpunk extension only recognizes game mods, so for this tool it shows *"You Have Reached The Fallback Installer!"*. Click **Yes, Install To Staging Anyway**, then **enable** the mod in Vortex's mod list. Only then do the files appear in `<Cyberpunk 2077>\tools\VRAM RipperDoc\`.
+
+**Mod Organizer 2:** install the zip like any other mod and enable it. The files are in the mod's own folder (right-click the mod, *Open in Explorer*, then `tools\VRAM RipperDoc`).
 
 Requirements: Windows 10/11 x64. No .NET install is needed (the exe is self-contained). The tool reads and writes compressed data with the game's own `oo2ext_7_win64.dll`. Oodle is not bundled.
 

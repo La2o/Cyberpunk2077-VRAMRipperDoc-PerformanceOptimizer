@@ -10,7 +10,7 @@ Most players only need the double-click shortcuts next to this exe (see START HE
 
 Usage: VramRipperdoc [options]
  Scan (default, read-only)
-  --game <dir>              Cyberpunk 2077 folder (auto-detected for Steam/GOG/Epic, or when run from inside it)
+  --game <dir>              Cyberpunk 2077 folder (auto-detected for Steam/GOG/Epic or when run from inside it; otherwise asked for once)
   --budget <GB>             VRAM your mods may add during normal play (default: from your GPU and in-game settings)
   --out <dir>               Where to write reports (default: next to the exe)
   --mo2 <instance dir>      Read mods from a Mod Organizer 2 instance (auto-detected, or asked for once)
@@ -32,7 +32,7 @@ Usage: VramRipperdoc [options]
 """;
 
 var flags = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-    { "no-vanilla", "no-open", "json", "help", "pause", "make-budget-archive", "include-new-items", "remove-budget-archive", "live", "share", "ask-mo2", "ask", "stress-all", "test-names" };
+    { "no-vanilla", "no-open", "json", "help", "pause", "make-budget-archive", "include-new-items", "remove-budget-archive", "live", "share", "ask-mo2", "ask-game", "ask", "stress-all", "test-names" };
 var opts = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
 for (int i = 0; i < args.Length; i++)
 {
@@ -66,6 +66,11 @@ if (opts.TryGetValue("ingame-test", out var ingameCount) && ingameCount != null)
 if (opts.TryGetValue("make-heavy", out var heavyOut) && heavyOut != null)
     return HeavyFixture.Make(FindGame(null)!, heavyOut, int.Parse(opts.GetValueOrDefault("count") ?? "300"));
 if (opts.ContainsKey("test-names")) return NameTest.Run();
+if (opts.TryGetValue("test-epic", out var epicDir) && epicDir != null)
+{
+    foreach (var dir in EpicInstallLocations(epicDir)) Console.WriteLine($"{dir}  game={IsGame(dir)}");
+    return 0;
+}
 if (opts.TryGetValue("make-fixtures", out var fixturesOut) && fixturesOut != null)
     return Fixtures.Make(FindGame(opts.GetValueOrDefault("game")) ?? throw new Exception("game not found"), fixturesOut);
 
@@ -73,7 +78,20 @@ var outDir = opts.GetValueOrDefault("out") ?? AppContext.BaseDirectory;
 bool quiet = opts.ContainsKey("json");
 void Log(string s) { if (!quiet) Console.Error.WriteLine(s); }
 
-var game = FindGame(opts.GetValueOrDefault("game"));
+// Remember folders the user gave us once (game, MO2), so the shortcuts keep working.
+var settingsFile = Path.Combine(AppContext.BaseDirectory, "RipperDoc.ini");
+
+// The tool doesn't have to live inside the game folder: it can be unzipped anywhere.
+var game = FindGame(opts.GetValueOrDefault("game"), ReadSetting(settingsFile, "game"));
+if (game == null && !quiet && (!Console.IsInputRedirected || opts.ContainsKey("ask-game"))) // --ask-game: test hook
+{
+    game = AskForGame();
+    if (game != null)
+    {
+        WriteSetting(settingsFile, "game", game);
+        Console.WriteLine("Saved: next time your game is found automatically.");
+    }
+}
 if (game == null)
 {
     Console.Error.WriteLine("Could not find Cyberpunk 2077. Pass it with --game \"D:\\Games\\Cyberpunk 2077\".");
@@ -82,8 +100,6 @@ if (game == null)
 }
 var modRoot = opts.GetValueOrDefault("mod-root") ?? game;
 
-// Remember an MO2 folder the user gave us once, so the shortcuts keep working.
-var settingsFile = Path.Combine(AppContext.BaseDirectory, "RipperDoc.ini");
 var mo2 = opts.GetValueOrDefault("mo2") ?? ReadSetting(settingsFile, "mo2");
 // Where an MO2 user's fix was saved last time (a real MO2 mod folder, outside the virtual game folder).
 var savedFixDir = ReadSetting(settingsFile, "fixdir");
@@ -431,12 +447,15 @@ string? AskForMo2()
         Console.Write("Type its number, paste a different MO2 folder, or press Enter to skip: ");
     }
     else Console.Write("If you use Mod Organizer 2, paste the folder that contains ModOrganizer.ini (or press Enter to skip): ");
-    var answer = Console.ReadLine()?.Trim().Trim('"');
+    var answer = ReadPath();
     if (string.IsNullOrEmpty(answer)) return null;
     if (int.TryParse(answer, out var n) && n >= 1 && n <= found.Count) return found[n - 1];
     if (File.Exists(answer) && Path.GetFileName(answer).Equals("ModOrganizer.ini", StringComparison.OrdinalIgnoreCase)) answer = Path.GetDirectoryName(answer)!;
     return Directory.Exists(answer) ? answer : null;
 }
+
+// A typed, pasted or dragged-in path: without the quotes Explorer adds, and without the BOM piped input can start with.
+static string? ReadPath() => Console.ReadLine()?.Trim().Trim('﻿').Trim().Trim('"');
 
 // MO2 runs tools through its virtual file system (usvfs); new files then land in "Overwrite".
 static bool UnderMo2()
@@ -468,9 +487,10 @@ static void WriteSetting(string file, string key, string value)
     catch { }
 }
 
-static string? FindGame(string? hint)
+static bool IsGame(string? d) => d != null && Directory.Exists(Path.Combine(d, "archive", "pc", "content"));
+
+static string? FindGame(string? hint, string? saved = null)
 {
-    static bool IsGame(string? d) => d != null && Directory.Exists(Path.Combine(d, "archive", "pc", "content"));
     if (hint != null) return IsGame(hint) ? Path.GetFullPath(hint) : null;
 
     // Installed as a mod: <game>/tools/VRAM RipperDoc/VramRipperdoc.exe
@@ -478,6 +498,8 @@ static string? FindGame(string? hint)
         if (IsGame(d.FullName)) return d.FullName;
     for (var d = new DirectoryInfo(Environment.CurrentDirectory); d != null; d = d.Parent)
         if (IsGame(d.FullName)) return d.FullName;
+    // Unzipped somewhere else: the game folder the player gave us before.
+    if (IsGame(saved)) return Path.GetFullPath(saved!);
 
     var candidates = new List<string>();
     if (OperatingSystem.IsWindows())
@@ -497,11 +519,49 @@ static string? FindGame(string? hint)
                 if (Registry.GetValue(key, "path", null) is string gog) candidates.Add(gog);
         }
         catch { }
+        // Epic: the launcher's install manifests say where each game is, wherever it was installed.
+        candidates.AddRange(EpicInstallLocations(Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "Epic", "EpicGamesLauncher", "Data", "Manifests")));
         candidates.Add(@"C:\Program Files\Epic Games\Cyberpunk 2077");
         candidates.Add(@"C:\GOG Games\Cyberpunk 2077");
     }
     var found = candidates.FirstOrDefault(IsGame);
     return found == null ? null : Path.GetFullPath(found);
+}
+
+static List<string> EpicInstallLocations(string manifestDir)
+{
+    var found = new List<string>();
+    try
+    {
+        foreach (var item in Directory.GetFiles(manifestDir, "*.item"))
+            try
+            {
+                using var doc = System.Text.Json.JsonDocument.Parse(File.ReadAllText(item));
+                if (doc.RootElement.TryGetProperty("InstallLocation", out var loc) && loc.GetString() is { Length: > 0 } dir) found.Add(dir);
+            }
+            catch { }
+    }
+    catch { }
+    return found;
+}
+
+string? AskForGame()
+{
+    Console.WriteLine();
+    Console.WriteLine("Couldn't find Cyberpunk 2077 by itself.");
+    Console.Write("Drag your Cyberpunk 2077 folder (the one with \"bin\" and \"archive\") into this window, or paste its path, then press Enter: ");
+    var answer = ReadPath();
+    if (string.IsNullOrEmpty(answer)) return null;
+    try
+    {
+        // Also accept the game's exe or any folder inside the game.
+        for (var d = new DirectoryInfo(File.Exists(answer) ? Path.GetDirectoryName(answer)! : answer); d != null; d = d.Parent)
+            if (IsGame(d.FullName)) return d.FullName;
+    }
+    catch { }
+    Console.WriteLine("That doesn't look like the Cyberpunk 2077 folder (there's no archive\\pc\\content inside).");
+    return null;
 }
 
 static class NativeConsole

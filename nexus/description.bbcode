@@ -5,7 +5,7 @@
 Anyone with lots of texture, clothing, character, vehicle or environment mods. It matters most on [b]8–16 GB cards[/b], but big 4K texture packs can fill even a [b]24 GB[/b] card. When VRAM runs out you get stutter, blurry textures popping in, or crashes. If you're not short on VRAM this won't raise your FPS, but the report still finds broken and useless files.
 
 [size=4][b]Quick start (3 double-clicks)[/b][/size]
-Close the game first. Then open [i]Cyberpunk 2077\tools\VRAM RipperDoc\[/i] and double-click:
+Close the game first. Then open the [i]VRAM RipperDoc[/i] folder ([i]Cyberpunk 2077\tools\VRAM RipperDoc\[/i] if you extracted it into the game or used Vortex) and double-click:
 [list=1]
 [*][b]1 - Scan my mods.bat[/b]: checks every texture and mesh mod and opens a report in your browser. Changes nothing. With a big mod list this takes a few minutes; a progress counter shows how far it is. Using Mod Organizer 2? If no mods are found, it asks for your MO2 folder once and remembers it.
 [*][b]2 - Apply budget fix.bat[/b] [i](optional)[/i]: if the report says you're over budget, this adds [b]one extra file[/b] with half-size copies of only your heaviest textures. It scans first, then shows how many textures it would shrink, how big the file will be and roughly how long it takes, and asks before writing anything. A second question covers the 4K textures of new clothing, cars and props. A "Writing fix: X / Y" counter shows progress, and when it's done it says what it did and shows the new file in Explorer. Your mods stay exactly as they are.
@@ -33,13 +33,20 @@ Changed your mind? Double-click [b]Undo budget fix.bat[/b] and everything is bac
 [/list]
 
 [size=4][b]Install[/b][/size]
-Install with [b]Vortex[/b] or [b]Mod Organizer 2[/b] like any other mod, or extract the zip into your Cyberpunk 2077 folder (the one with [i]bin[/i] and [i]archive[/i]).
+[list]
+[*][b]Manual download (simplest):[/b] extract the zip anywhere, for example into your Cyberpunk 2077 folder (the one with [i]bin[/i] and [i]archive[/i]) or onto your Desktop. It finds Steam, GOG and Epic installs by itself; if it can't, it asks for your game folder once and remembers it.
+[*][b]Vortex:[/b] Vortex only knows game mods, so for this tool it says [i]"You Have Reached The Fallback Installer!"[/i]. Click [b]Yes, Install To Staging Anyway[/b], then [b]enable[/b] the mod in Vortex's mod list. Only then do the files appear in [i]Cyberpunk 2077\tools\VRAM RipperDoc[/i].
+[*][b]Mod Organizer 2:[/b] install and enable it like any other mod. The files are in the mod's own folder: right-click it in MO2, [i]Open in Explorer[/i], then [i]tools\VRAM RipperDoc[/i].
+[/list]
 No requirements. It runs on its own (Windows 10/11, 64-bit).
 
 [size=4][b]FAQ[/b][/size]
 [spoiler]
 [b]A "Cyber Engine Tweaks" box says "Failed to get ...\VRAM RipperDoc\version.dll handle" and the tool closes.[/b]
 Fixed in v0.2.7, please update. Older versions accidentally loaded the game's mod loaders (RED4ext/CET) into the tool, and CET then shut it down. Your CET install is fine.
+
+[b]I installed it with Vortex, but the tools\VRAM RipperDoc folder is empty or missing.[/b]
+Vortex puts tools like this into its staging folder first and only copies them to the game when the mod is [b]enabled[/b]. Enable it in Vortex's mod list (after clicking [i]Yes, Install To Staging Anyway[/i] on the "Fallback Installer" message). Or skip Vortex: download manually and extract the zip anywhere.
 
 [b]Is it safe? Does it change my mods?[/b]
 Scanning only reads files. The optional budget fix adds one new file ([i]archive\pc\mod\!RipperDoc_Budget.archive[/i], or the MO2 mod [i]VRAM RipperDoc Budget Fix[/i]) and never edits your mods. Run Undo budget fix, or delete that file, to go back.
