@@ -17,8 +17,10 @@ Double-click the numbered files in order:
       It scans first, then shows how many textures it would shrink, how big the
       file will be and roughly how long it takes, and asks before writing.
       A second question covers 4K textures of new clothing, cars and props
-      (they only use VRAM while you use them). A progress counter shows how far
-      it is; when it is done it shows the new file in Explorer.
+      (they only use VRAM while you use them): shrink them to 2K, and if you
+      like, further to 1K (softer up close, hard to see on small screens like
+      the Steam Deck's). A progress counter shows how far it is; when it is
+      done it shows the new file in Explorer.
 
   3 - Measure VRAM in game.bat   (optional)
       Records how much video memory the game really uses while you play.
@@ -31,6 +33,11 @@ Double-click the numbered files in order:
 
 This folder can live anywhere (game folder, Desktop, ...). If the tool can't
 find your game, it asks for the game folder once and remembers it.
+On Linux or Steam Deck? Use the shortcuts in the Linux folder instead
+(see "START HERE (Linux).txt" there).
+A shortcut says VramRipperdoc.exe is missing? Your antivirus probably removed
+it: restore it in Windows Security > Virus & threat protection > Protection
+history, or download the mod again.
 Reports are saved next to these files (VRAM-RipperDoc-Report.html).
 Advanced options: open a terminal here and run  VramRipperdoc.exe --help
 More info: README.md, or https://www.nexusmods.com/cyberpunk2077/mods/36878

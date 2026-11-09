@@ -87,28 +87,65 @@ public static class Community
 {
     public const string DefaultUrl = "https://raw.githubusercontent.com/La2o/Cyberpunk2077-VRAMRipperDoc-PerformanceOptimizer/main/community/costs.json";
 
-    public static void WriteShare(ScanResult r, string path)
+    /// <summary>
+    /// GitHub rejects an issue or comment longer than 65,536 characters, and the issue form adds its own headings
+    /// around the pasted file, so every part stays below this.
+    /// </summary>
+    public const int MaxPartChars = 60_000;
+
+    /// <summary>
+    /// Writes VRAM-RipperDoc-Share.json, or -1-of-N.json, -2-of-N.json ... when one post can't hold every mod.
+    /// One mod per line keeps it readable; each part is complete JSON in the same shape. Returns the files written.
+    /// </summary>
+    public static List<string> WriteShare(ScanResult r, string outDir)
     {
-        using var fs = File.Create(path);
-        using var w = new Utf8JsonWriter(fs, new JsonWriterOptions { Indented = true });
-        w.WriteStartObject();
-        w.WriteNumber("version", 1);
-        w.WriteString("tool", Report.Version);
-        w.WriteStartArray("mods");
+        foreach (var old in Directory.GetFiles(outDir, "VRAM-RipperDoc-Share*.json")) File.Delete(old);  // parts from an earlier, larger scan
+
+        // Unescaped so non-English archive names stay readable (and short) instead of becoming \uXXXX.
+        var options = new JsonWriterOptions { Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
+        var lines = new List<string>();
         foreach (var m in r.Mods.Where(m => m.Error == null && m.Assets.Count > 0))
         {
-            w.WriteStartObject();
-            w.WriteString("archive", Path.GetFileName(m.File));
-            w.WriteNumber("disk", m.DiskSize);
-            if (m.NexusId != null) w.WriteNumber("nexusId", m.NexusId.Value);
-            if (m.Package != null) w.WriteString("package", m.Package);
-            w.WriteNumber("delta", m.GpuDelta); w.WriteNumber("textures", m.Textures); w.WriteNumber("meshes", m.Meshes);
-            w.WriteNumber("tris", m.Tris0); w.WriteNumber("flagged", m.FlagCount);
-            w.WriteEndObject();
+            using var ms = new MemoryStream();
+            using (var w = new Utf8JsonWriter(ms, options))
+            {
+                w.WriteStartObject();
+                w.WriteString("archive", Path.GetFileName(m.File));
+                w.WriteNumber("disk", m.DiskSize);
+                if (m.NexusId != null) w.WriteNumber("nexusId", m.NexusId.Value);
+                if (m.Package != null) w.WriteString("package", m.Package);
+                w.WriteNumber("delta", m.GpuDelta); w.WriteNumber("textures", m.Textures); w.WriteNumber("meshes", m.Meshes);
+                w.WriteNumber("tris", m.Tris0); w.WriteNumber("flagged", m.FlagCount);
+                w.WriteEndObject();
+            }
+            lines.Add(Encoding.UTF8.GetString(ms.ToArray()));
         }
-        w.WriteEndArray();
-        w.WriteEndObject();
+
+        // Room for the header with the longest possible "part" value, the closing "]}" and the line breaks.
+        int room = MaxPartChars - Header("99/99").Length - 8;
+        var parts = new List<List<string>> { new() };
+        int used = 0;
+        foreach (var line in lines)
+        {
+            if (parts[^1].Count > 0 && used + line.Length + 2 > room) { parts.Add(new()); used = 0; }
+            parts[^1].Add(line);
+            used += line.Length + 2;
+        }
+
+        var written = new List<string>();
+        for (int i = 0; i < parts.Count; i++)
+        {
+            var name = parts.Count == 1 ? "VRAM-RipperDoc-Share.json" : $"VRAM-RipperDoc-Share-{i + 1}-of-{parts.Count}.json";
+            var text = Header(parts.Count == 1 ? null : $"{i + 1}/{parts.Count}") + "\n" + string.Join(",\n", parts[i]) + "\n]}\n";
+            var path = Path.Combine(outDir, name);
+            File.WriteAllText(path, text, new UTF8Encoding(false));
+            written.Add(path);
+        }
+        return written;
     }
+
+    static string Header(string? part) =>
+        $"{{\"version\":1,\"tool\":\"{Report.Version}\"," + (part != null ? $"\"part\":\"{part}\"," : "") + "\"mods\":[";
 
     public sealed record Known(string Archive, long Disk, int? NexusId, long Delta);
 

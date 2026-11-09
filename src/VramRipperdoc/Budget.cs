@@ -70,6 +70,8 @@ public sealed class BudgetPlan
     public long WhenUsed;
     public long AfterPlan;
     public bool IncludeNew;
+    /// <summary>Largest size new items' textures keep when <see cref="IncludeNew"/> (2048, or 1024 for small screens).</summary>
+    public int NewItemsMax = 2048;
     public long NewItemSaves;
     public List<PlanStep> Steps = new();
     public List<(ModReport Mod, long Saves, int Count)> PerMod = new();
@@ -78,13 +80,13 @@ public sealed class BudgetPlan
     /// <summary>
     /// Greedy plan over always-loaded textures: repeatedly halve whichever saves the most VRAM
     /// (each halving removes ~75% of it), never below 1024 px, until the budget fits.
-    /// With <paramref name="includeNew"/>, new items' 4K+ textures are also halved once (to 2K):
-    /// they only cost VRAM while used, so they never count against the budget itself.
+    /// With <paramref name="includeNew"/>, new items' textures above <paramref name="newItemsMax"/> (2K, or 1K) are also
+    /// halved down to it: they only cost VRAM while used, so they never count against the budget itself.
     /// Original archives are never touched; the plan is applied as a separate archive.
     /// </summary>
-    public static BudgetPlan Build(ScanResult r, long budget, bool includeNew = false)
+    public static BudgetPlan Build(ScanResult r, long budget, bool includeNew = false, int newItemsMax = 2048)
     {
-        var plan = new BudgetPlan { Budget = budget, Current = r.AlwaysDelta, WhenUsed = r.WhenUsedDelta, IncludeNew = includeNew };
+        var plan = new BudgetPlan { Budget = budget, Current = r.AlwaysDelta, WhenUsed = r.WhenUsedDelta, IncludeNew = includeNew, NewItemsMax = newItemsMax };
         long current = plan.Current;
         var candidates = r.Mods.SelectMany(m => m.Assets.Where(a => a.Kind == AssetKind.Texture && a.Loads && a.AlwaysLoaded && a.MaxDim >= 2048 && a.DeltaGpu > 0)
             .Select(a => (Mod: m, Asset: a))).ToList();
@@ -109,10 +111,12 @@ public sealed class BudgetPlan
 
         if (includeNew)
             foreach (var m in r.Mods)
-                foreach (var a in m.Assets.Where(a => a.Kind == AssetKind.Texture && a.Loads && !a.AlwaysLoaded && a.MaxDim >= 4096))
+                foreach (var a in m.Assets.Where(a => a.Kind == AssetKind.Texture && a.Loads && !a.AlwaysLoaded && a.MaxDim > newItemsMax && a.MaxDim >= 2048))
                 {
-                    long save = a.GpuBytes * 3 / 4;
-                    plan.Steps.Add(new PlanStep(m, a, 1, save));
+                    int halvings = 0;
+                    while ((a.MaxDim >> halvings) > newItemsMax) halvings++;
+                    long save = a.GpuBytes - (a.GpuBytes >> (2 * halvings)); // each halving removes ~75%
+                    plan.Steps.Add(new PlanStep(m, a, halvings, save));
                     plan.NewItemSaves += save;
                 }
 

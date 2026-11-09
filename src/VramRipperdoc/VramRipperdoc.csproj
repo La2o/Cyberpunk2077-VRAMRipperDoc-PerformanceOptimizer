@@ -7,13 +7,15 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <AssemblyName>VramRipperdoc</AssemblyName>
     <RootNamespace>VramRipperdoc</RootNamespace>
-    <Version>0.3.0</Version>
+    <Version>0.3.1</Version>
     <InvariantGlobalization>true</InvariantGlobalization>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <SelfContained>true</SelfContained>
     <PublishSingleFile>true</PublishSingleFile>
     <PublishTrimmed>true</PublishTrimmed>
-    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <!-- Off: a self-extracting compressed bundle looks like a packed executable to antivirus heuristics, which
+         quarantined the exe for some players. The Nexus zip ends up the same size either way. -->
+    <EnableCompressionInSingleFile>false</EnableCompressionInSingleFile>
     <DebugType>none</DebugType>
     <Product>VRAM RipperDoc - Performance Optimizer</Product>
     <Company>La2o</Company>

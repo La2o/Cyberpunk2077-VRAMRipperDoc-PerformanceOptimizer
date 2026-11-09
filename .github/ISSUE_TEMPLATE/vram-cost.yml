@@ -8,10 +8,15 @@ body:
       value: |
         Run `VramRipperdoc.exe --share`, open `VRAM-RipperDoc-Share.json` next to the exe and paste it below.
         It contains only archive file names, sizes, optional Nexus mod ids and the numbers. No paths, no user names.
+
+        **Big mod list?** GitHub allows about 65,000 characters per post, so the tool then writes
+        `VRAM-RipperDoc-Share-1-of-N.json`, `-2-of-N.json` and so on (v0.3.1 and later). Paste part 1 here,
+        submit, then paste each other part as a new comment on this issue.
   - type: textarea
     id: share
     attributes:
       label: VRAM-RipperDoc-Share.json
+      description: The whole file, or part 1 if the tool wrote several parts.
       render: json
     validations:
       required: true

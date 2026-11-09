@@ -1,0 +1,40 @@
+VRAM RipperDoc - Performance Optimizer on Linux and Steam Deck
+==============================================================
+
+The tool itself is a Windows program (it reads your mods with the game's own
+Oodle, which only exists for Windows), so these shortcuts run it through Wine
+or Steam's Proton. If you play Cyberpunk 2077 through Steam you already have
+Proton and don't need to install anything. Otherwise install Wine 8 or newer.
+
+Run the numbered files in this folder in order (on Steam Deck: Desktop Mode).
+They work like the Windows shortcuts described in START HERE.txt one folder up:
+
+  1 - Scan my mods.sh           Report of your heaviest mods. Changes nothing.
+  2 - Apply budget fix.sh       Optional: ONE extra file with smaller textures.
+  3 - Measure VRAM in game.sh   Optional: the game's real VRAM use while you play.
+  Undo budget fix.sh            Removes the file from step 2.
+
+Double-clicking opens a text editor instead of running it?
+  Right-click the file > Properties > Permissions > tick "Is executable"
+  (or "Allow executing file as program"), then double-click it again. Or open
+  a terminal in this folder and run, for example:  bash "1 - Scan my mods.sh"
+
+What the shortcuts do for you:
+  - Find the game in your Steam libraries (also on an SD card), Heroic, Lutris
+    or Bottles, and read your graphics settings from the game's Proton prefix.
+    If the game isn't found, it asks: drag the game folder into the terminal.
+  - Find your graphics card. The Steam Deck and other shared-memory GPUs are
+    counted as 8 GB (change it with: ./ripperdoc.sh --vram 6).
+  - Run the tool in its own small Wine folder (~/.local/share/vram-ripperdoc).
+    The first run sets it up, which can take a minute. Your game's own Proton
+    prefix is never changed.
+  - Measure VRAM from Linux itself (AMD and Intel through the kernel, NVIDIA
+    through nvidia-smi), so step 3 works while the game runs in Proton.
+
+Using Mod Organizer 2 through Wine? If no mods are found, the tool asks for
+your MO2 folder: drag in the folder that contains ModOrganizer.ini.
+
+Reports are saved one folder up (VRAM-RipperDoc-Report.html) and open in your
+browser. Advanced options:  ./ripperdoc.sh --help
+Use a specific Wine:  RIPPERDOC_WINE=/path/to/wine ./ripperdoc.sh
+More info: https://www.nexusmods.com/cyberpunk2077/mods/36878

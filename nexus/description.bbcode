@@ -8,7 +8,7 @@ Anyone with lots of texture, clothing, character, vehicle or environment mods. I
 Close the game first. Then open the [i]VRAM RipperDoc[/i] folder ([i]Cyberpunk 2077\tools\VRAM RipperDoc\[/i] if you extracted it into the game or used Vortex) and double-click:
 [list=1]
 [*][b]1 - Scan my mods.bat[/b]: checks every texture and mesh mod and opens a report in your browser. Changes nothing. With a big mod list this takes a few minutes; a progress counter shows how far it is. Using Mod Organizer 2? If no mods are found, it asks for your MO2 folder once and remembers it.
-[*][b]2 - Apply budget fix.bat[/b] [i](optional)[/i]: if the report says you're over budget, this adds [b]one extra file[/b] with half-size copies of only your heaviest textures. It scans first, then shows how many textures it would shrink, how big the file will be and roughly how long it takes, and asks before writing anything. A second question covers the 4K textures of new clothing, cars and props. A "Writing fix: X / Y" counter shows progress, and when it's done it says what it did and shows the new file in Explorer. Your mods stay exactly as they are.
+[*][b]2 - Apply budget fix.bat[/b] [i](optional)[/i]: if the report says you're over budget, this adds [b]one extra file[/b] with half-size copies of only your heaviest textures. It scans first, then shows how many textures it would shrink, how big the file will be and roughly how long it takes, and asks before writing anything. A second question covers the 4K textures of new clothing, cars and props: shrink them to 2K, or further to 1K (softer up close, hard to see on small screens like the Steam Deck's). A "Writing fix: X / Y" counter shows progress, and when it's done it says what it did and shows the new file in Explorer. Your mods stay exactly as they are.
 [*][b]3 - Measure VRAM in game.bat[/b] [i](optional)[/i]: records how much VRAM the game really uses while you play. Run it once named "before" and once named "after" (same save, same spot) to see what changed.
 [/list]
 Changed your mind? Double-click [b]Undo budget fix.bat[/b] and everything is back as it was.
@@ -37,8 +37,9 @@ Changed your mind? Double-click [b]Undo budget fix.bat[/b] and everything is bac
 [*][b]Manual download (simplest):[/b] extract the zip anywhere, for example into your Cyberpunk 2077 folder (the one with [i]bin[/i] and [i]archive[/i]) or onto your Desktop. It finds Steam, GOG and Epic installs by itself; if it can't, it asks for your game folder once and remembers it.
 [*][b]Vortex:[/b] Vortex only knows game mods, so for this tool it says [i]"You Have Reached The Fallback Installer!"[/i]. Click [b]Yes, Install To Staging Anyway[/b], then [b]enable[/b] the mod in Vortex's mod list. Only then do the files appear in [i]Cyberpunk 2077\tools\VRAM RipperDoc[/i].
 [*][b]Mod Organizer 2:[/b] install and enable it like any other mod. The files are in the mod's own folder: right-click it in MO2, [i]Open in Explorer[/i], then [i]tools\VRAM RipperDoc[/i].
+[*][b]Linux and Steam Deck:[/b] extract the zip anywhere and run the shortcuts in the [i]Linux[/i] folder (on the Deck, in Desktop Mode). They run the tool through Steam's Proton or Wine, find your game (SD card, Heroic, Lutris and Bottles included) and its settings, and measure VRAM through Linux itself. If you play through Steam there is nothing to install. [i]START HERE (Linux).txt[/i] explains it.
 [/list]
-No requirements. It runs on its own (Windows 10/11, 64-bit).
+No requirements. It runs on its own on Windows 10/11 (64-bit), and on Linux and Steam Deck through Proton or Wine.
 
 [size=4][b]FAQ[/b][/size]
 [spoiler]
@@ -47,6 +48,9 @@ Fixed in v0.2.7, please update. Older versions accidentally loaded the game's mo
 
 [b]I installed it with Vortex, but the tools\VRAM RipperDoc folder is empty or missing.[/b]
 Vortex puts tools like this into its staging folder first and only copies them to the game when the mod is [b]enabled[/b]. Enable it in Vortex's mod list (after clicking [i]Yes, Install To Staging Anyway[/i] on the "Fallback Installer" message). Or skip Vortex: download manually and extract the zip anywhere.
+
+[b]A shortcut says "VramRipperdoc.exe is missing" or "... is not recognized as an internal or external command".[/b]
+Your antivirus most likely removed the exe (new tools without a paid code-signing certificate get flagged sometimes). Open Windows Security, [i]Virus & threat protection[/i], [i]Protection history[/i], find VramRipperdoc.exe and choose [i]Restore[/i] or [i]Allow on device[/i]. If it isn't listed, download the zip again and unpack all of it. Since v0.3.1 the exe is no longer packed, which antivirus programs flag less often.
 
 [b]Is it safe? Does it change my mods?[/b]
 Scanning only reads files. The optional budget fix adds one new file ([i]archive\pc\mod\!RipperDoc_Budget.archive[/i], or the MO2 mod [i]VRAM RipperDoc Budget Fix[/i]) and never edits your mods. Run Undo budget fix, or delete that file, to go back.
@@ -70,7 +74,7 @@ The room for mods (called "budget" before v0.2.9) is not your total or free VRAM
 No. That's every piece of clothing, every car and every prop you have installed, added up as if you used all of them at the same moment, which never happens. The game only loads the ones you're wearing, driving or looking at. That's why only [b]Normal play[/b] counts against your budget.
 
 [b]Where is the fix file? I can't find it.[/b]
-After [b]2 - Apply budget fix[/b] finishes, it opens Explorer with the new file selected: [i]archive\pc\mod\!RipperDoc_Budget.archive[/i]. If it says "Nothing to fix", your mods already fit (answer Y to the second question to shrink new items' 4K textures anyway). [b]Mod Organizer 2 users:[/b] when you run it through MO2, the fix is saved as a new MO2 mod called [i]VRAM RipperDoc Budget Fix[/i]. Press F5 (Refresh) in MO2 and tick it to enable it.
+After [b]2 - Apply budget fix[/b] finishes, it opens Explorer with the new file selected: [i]archive\pc\mod\!RipperDoc_Budget.archive[/i]. If it says "Nothing to fix", your mods already fit (answer Y to the second question to shrink new items' 4K textures to 2K or 1K anyway). [b]Mod Organizer 2 users:[/b] when you run it through MO2, the fix is saved as a new MO2 mod called [i]VRAM RipperDoc Budget Fix[/i]. Press F5 (Refresh) in MO2 and tick it to enable it.
 
 [b]The scan or the fix seems stuck / nothing opens.[/b]
 Big mod lists (thousands of archives) take a few minutes. Watch the "Scanning mods: X / Y" counter, and while the fix is being written, the "Writing fix: X / Y textures" counter with time left. The report opens in your browser when it's done, and is also saved as [i]VRAM-RipperDoc-Report.html[/i] next to the tool.
@@ -113,9 +117,9 @@ Use it [i]alongside[/i] any of these.
 [*]Flags: 4K/8K textures, no mipmaps, uncompressed textures, N× vanilla pixels or triangles, no LODs, dense meshes, missing hard imports, identical-to-vanilla files, duplicates, likely unused files.
 [*]The budget fix drops the top mip of each planned texture (no re-encoding). It rewrites sizes, offsets and every checksum, and writes a sorted, 4 KiB-aligned archive. Tested in game on 2.5.
 [*]The live monitor reads Windows "GPU Process Memory" performance counters, the same source as Task Manager.
-[*]Command line: [i]VramRipperdoc.exe --help[/i] (--budget, --include-new-items, --json, --hashes, --share, --community and more).
+[*]Command line: [i]VramRipperdoc.exe --help[/i] (--budget, --include-new-items, --new-items-to 1k, --json, --hashes, --share, --community and more).
 [/list]
 Source code (MIT): [url=https://github.com/La2o/Cyberpunk2077-VRAMRipperDoc-PerformanceOptimizer]GitHub[/url]
 [/spoiler]
 
-[b]Help other players (optional):[/b] run [i]VramRipperdoc.exe --share[/i] to create an anonymous file with only mod file names and their VRAM numbers, and submit it on GitHub. Over time this builds a list of how heavy popular mods are.
+[b]Help other players (optional):[/b] run [i]VramRipperdoc.exe --share[/i] to create an anonymous file with only mod file names and their VRAM numbers, and submit it on GitHub. Big mod lists are split into parts that each fit in one GitHub post. Over time this builds a list of how heavy popular mods are.

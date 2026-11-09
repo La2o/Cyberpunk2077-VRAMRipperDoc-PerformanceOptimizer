@@ -90,7 +90,7 @@ public static class Report
         w.WriteStartObject("budget");
         w.WriteNumber("budget", plan.Budget); w.WriteString("why", r.BudgetWhy); w.WriteString("tips", SettingsTips(r));
         w.WriteNumber("current", plan.Current); w.WriteNumber("afterPlan", plan.AfterPlan);
-        w.WriteNumber("whenUsed", plan.WhenUsed); w.WriteBoolean("includeNew", plan.IncludeNew); w.WriteNumber("newItemSaves", plan.NewItemSaves);
+        w.WriteNumber("whenUsed", plan.WhenUsed); w.WriteBoolean("includeNew", plan.IncludeNew); w.WriteNumber("newItemsMax", plan.NewItemsMax); w.WriteNumber("newItemSaves", plan.NewItemSaves);
         w.WriteStartArray("steps");
         foreach (var p in plan.Steps)
         {
@@ -205,7 +205,7 @@ else if(D.budgetArchive)bh+=`<p>Without the fix your mods would add about ${sz(B
 else{bh+=`<p class="warn">During normal play your mods add about <b>${sz(B.current)}</b> on top of the game itself, but at your settings your card only has room for ${sz(B.budget)}: ${sz(B.current-B.budget)} too much.</p>`;
  bh+=B.afterPlan<=B.budget?`<p>Halving ${stepsAlways} texture(s) fixes it. <b>To apply: double-click <i>2 - Apply budget fix.bat</i></b>. It adds one extra file and never changes your mods; <i>Undo budget fix.bat</i> removes it.</p>`:`<p>Halving the biggest textures gets you to ${sz(B.afterPlan)}. To go lower, remove or swap the heaviest mod at the top of the table below. <b>To apply what can be done: double-click <i>2 - Apply budget fix.bat</i></b>.</p>`;}
 if(B.current>B.budget&&B.tips)bh+=`<p>Lower settings also give mods more room (estimates): ${esc(B.tips)}.</p>`;
-bh+=`<p class="note">New items add up to ${sz(B.whenUsed)} if every one of them were used at once, which never happens, so they don't count against this room. <i>2 - Apply budget fix</i> can also halve their 4K textures if you say yes when it asks.</p>`;
+bh+=`<p class="note">New items add up to ${sz(B.whenUsed)} if every one of them were used at once, which never happens, so they don't count against this room. <i>2 - Apply budget fix</i> can also shrink their big textures to 2K or 1K if you say yes when it asks.</p>`;
 if(B.steps.length)bh+=`<details><summary class="note">Show the ${B.steps.length} texture(s) the fix would halve</summary><table><tr><th class="l">Mod</th><th class="l">File</th><th class="l">Type</th><th>Now</th><th>After</th><th>Saves</th></tr>`+B.steps.slice(0,60).map(s=>`<tr><td class="l">${esc(s.mod)}</td><td class="l name" title="${esc(s.asset)}">${esc(s.asset)}</td><td class="l">${s.always?'normal play':'new item'}</td><td>${s.from}px</td><td>${s.to}px</td><td>${sz(s.saves)}</td></tr>`).join('')+'</table>'+(B.steps.length>60?`<p class="note">+${B.steps.length-60} more in the JSON report</p>`:'')+'</details>';
 $('#budget').innerHTML=bh+`<p class="note">How the room for mods is worked out: ${esc(B.why)}.</p>`;
 if(D.history.length||D.managerNotes.length){$('#hist').hidden=false;$('#hist').innerHTML=`<h2>Changes &amp; sources</h2><pre>${esc([...D.managerNotes,...D.history].join('\n'))}</pre>`;}

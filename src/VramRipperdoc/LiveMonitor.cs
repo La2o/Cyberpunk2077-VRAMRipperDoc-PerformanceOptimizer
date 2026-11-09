@@ -67,17 +67,49 @@ public static class LiveMonitor
         public void Dispose() => PdhCloseQuery(_q);
     }
 
-    public static int Run(string processName, string label, int seconds, string outDir, bool budgetArchiveActive)
+    /// <param name="samplesIn">
+    /// Linux: "3 - Measure VRAM in game.sh" waits for the game itself (Wine can't see Proton's processes) and pipes one
+    /// "&lt;game VRAM bytes&gt; &lt;GPU total bytes&gt;" line per second; the session ends when the pipe closes.
+    /// </param>
+    public static int Run(string processName, string label, int seconds, string outDir, bool budgetArchiveActive, TextReader? samplesIn = null)
     {
-        if (!OperatingSystem.IsWindows()) { Console.Error.WriteLine("Live monitoring needs Windows."); return 2; }
-        using var q = new Query();
         bool stop = false;
         Console.CancelKeyPress += (_, e) => { e.Cancel = true; stop = true; };
-
-        Console.WriteLine($"Waiting for {processName}.exe ... (Ctrl+C to stop)");
-        Process? p = null;
-        while (!stop && (p = Process.GetProcessesByName(processName).FirstOrDefault()) == null) Thread.Sleep(1000);
-        if (p == null) return 1;
+        Query? q = null;
+        Func<(long Process, long Adapter)?> next;
+        string what;
+        if (samplesIn != null)
+        {
+            what = $"{processName}.exe";
+            next = () =>
+            {
+                while (samplesIn.ReadLine() is { } line)
+                {
+                    var parts = line.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                    if (parts.Length >= 2 && long.TryParse(parts[0], out var proc) && long.TryParse(parts[1], out var adapter)) return (proc, adapter);
+                }
+                return null;
+            };
+        }
+        else
+        {
+            if (Platform.IsWine) { Console.Error.WriteLine("On Linux, measure with \"3 - Measure VRAM in game.sh\" in the Linux folder."); return 2; }
+            if (!OperatingSystem.IsWindows()) { Console.Error.WriteLine("Live monitoring needs Windows."); return 2; }
+            q = new Query();
+            Console.WriteLine($"Waiting for {processName}.exe ... (Ctrl+C to stop)");
+            Process? p = null;
+            while (!stop && (p = Process.GetProcessesByName(processName).FirstOrDefault()) == null) Thread.Sleep(1000);
+            if (p == null) { q.Dispose(); return 1; }
+            var game = p;
+            what = $"{processName}.exe (pid {game.Id})";
+            next = () =>
+            {
+                if (game.HasExited) return null;
+                Thread.Sleep(1000);
+                return q.Sample(Process.GetProcessesByName(processName).Select(x => x.Id).ToList());
+            };
+        }
+        using var pdh = q;
 
         Directory.CreateDirectory(outDir);
         var start = DateTime.Now;
@@ -87,12 +119,10 @@ public static class LiveMonitor
         var samples = new List<long>();
         long adapterPeak = 0;
         var sw = Stopwatch.StartNew();
-        Console.WriteLine($"Measuring {processName}.exe (pid {p.Id}) as \"{label}\"{(budgetArchiveActive ? " [budget archive active]" : "")}. Play normally; stop with Ctrl+C or by closing the game.");
-        while (!stop && !p.HasExited && (seconds <= 0 || sw.Elapsed.TotalSeconds < seconds))
+        Console.WriteLine($"Measuring {what} as \"{label}\"{(budgetArchiveActive ? " [budget archive active]" : "")}. Play normally; stop with Ctrl+C or by closing the game.");
+        while (!stop && (seconds <= 0 || sw.Elapsed.TotalSeconds < seconds) && next() is { } sample)
         {
-            Thread.Sleep(1000);
-            var pids = Process.GetProcessesByName(processName).Select(x => x.Id).ToList();
-            var (proc, adapter) = q.Sample(pids);
+            var (proc, adapter) = sample;
             if (proc <= 0) continue;
             samples.Add(proc);
             adapterPeak = Math.Max(adapterPeak, adapter);
@@ -111,7 +141,7 @@ public static class LiveMonitor
         SaveSessions(outDir, history);
 
         Console.WriteLine($"Session \"{label}\": {samples.Count} samples, peak {Report.Size(session.Peak)}, 95th pct {Report.Size(session.P95)}, steady (last 60 s) {Report.Size(session.Steady)}");
-        Console.WriteLine($"CSV: {csvPath}");
+        Console.WriteLine($"CSV: {Platform.Shown(csvPath)}");
         PrintComparison(history);
         return 0;
     }

@@ -12,6 +12,8 @@ Usage: VramRipperdoc [options]
  Scan (default, read-only)
   --game <dir>              Cyberpunk 2077 folder (auto-detected for Steam/GOG/Epic or when run from inside it; otherwise asked for once)
   --budget <GB>             VRAM your mods may add during normal play (default: from your GPU and in-game settings)
+  --vram <GB> [--gpu <name>]  Your graphics card's VRAM (default: detected)
+  --settings <file>         The game's UserSettings.json (default: detected)
   --out <dir>               Where to write reports (default: next to the exe)
   --mo2 <instance dir>      Read mods from a Mod Organizer 2 instance (auto-detected, or asked for once)
   --hashes <file>           Optional list of depot paths (e.g. WolvenKit's archivehashes.csv) for nicer names
@@ -20,19 +22,21 @@ Usage: VramRipperdoc [options]
   --no-open                 Don't open the HTML report (or Explorer) when done
   --json                    Print the JSON report to stdout instead of the table
  Apply the plan (optional)
-  --make-budget-archive     Write ONE extra archive with the planned textures halved (your mods are untouched)
-  --include-new-items       Also halve 4K+ textures of new clothing, cars and props (they only cost VRAM while used)
+  --make-budget-archive     Write ONE extra archive with the planned textures shrunk (your mods are untouched)
+  --include-new-items       Also shrink new clothing, cars and props to 2K (they only cost VRAM while used)
+  --new-items-to 1k         ... to 1K instead (softer up close; fine on small screens like the Steam Deck)
   --threads <n>             Worker threads for writing the fix (default: CPU cores - 1, max 8; 2 under MO2)
   --remove-budget-archive   Delete it again
  Measure real VRAM
   --live [--label <name>] [--seconds <n>]   Record the game's actual VRAM use while you play (Ctrl+C to stop)
+ Linux and Steam Deck: use the shortcuts in the Linux folder (they run this exe through Wine or Proton).
  Community (opt-in)
-  --share                   Write an anonymous per-mod cost file you can submit on GitHub
+  --share                   Write an anonymous per-mod cost file you can submit on GitHub (in parts for big mod lists)
   --community [file|url]    Show other players' reported costs (default: the project's GitHub list)
 """;
 
 var flags = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-    { "no-vanilla", "no-open", "json", "help", "pause", "make-budget-archive", "include-new-items", "remove-budget-archive", "live", "share", "ask-mo2", "ask-game", "ask", "stress-all", "test-names" };
+    { "no-vanilla", "no-open", "json", "help", "pause", "make-budget-archive", "include-new-items", "remove-budget-archive", "live", "share", "ask-mo2", "ask-game", "ask", "stress-all", "test-names", "test-share", "test-paths", "as-wine" };
 var opts = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
 for (int i = 0; i < args.Length; i++)
 {
@@ -44,6 +48,7 @@ for (int i = 0; i < args.Length; i++)
     else opts[key] = i + 1 < args.Length ? args[++i] : null;
 }
 if (opts.ContainsKey("help")) { Console.WriteLine(Usage); return 0; }
+if (opts.ContainsKey("as-wine")) Platform.IsWine = true; // test hook: behave as under Wine on Linux
 
 DisableQuickEdit();
 // A crash should leave a message, not a silently closed window.
@@ -66,6 +71,8 @@ if (opts.TryGetValue("ingame-test", out var ingameCount) && ingameCount != null)
 if (opts.TryGetValue("make-heavy", out var heavyOut) && heavyOut != null)
     return HeavyFixture.Make(FindGame(null)!, heavyOut, int.Parse(opts.GetValueOrDefault("count") ?? "300"));
 if (opts.ContainsKey("test-names")) return NameTest.Run();
+if (opts.ContainsKey("test-share")) return ShareTest.Run();
+if (opts.ContainsKey("test-paths")) return PathTest.Run();
 if (opts.TryGetValue("test-epic", out var epicDir) && epicDir != null)
 {
     foreach (var dir in EpicInstallLocations(epicDir)) Console.WriteLine($"{dir}  game={IsGame(dir)}");
@@ -125,9 +132,10 @@ if (opts.ContainsKey("remove-budget-archive"))
 }
 if (opts.ContainsKey("live"))
     return LiveMonitor.Run(opts.GetValueOrDefault("process") ?? "Cyberpunk2077", opts.GetValueOrDefault("label") ?? "session",
-        int.TryParse(opts.GetValueOrDefault("seconds"), out var secs) ? secs : 0, outDir, BudgetArchive.FindExisting(modRoot, fixDirs) != null);
+        int.TryParse(opts.GetValueOrDefault("seconds"), out var secs) ? secs : 0, outDir, BudgetArchive.FindExisting(modRoot, fixDirs) != null,
+        samplesIn: opts.GetValueOrDefault("samples") == "-" ? Console.In : null);
 
-Log($"VRAM RipperDoc v{Report.Version} - scanning {game}");
+Log($"VRAM RipperDoc v{Report.Version} - scanning {Platform.Shown(game)}");
 bool interactive = !quiet && (!Console.IsInputRedirected || opts.ContainsKey("ask-mo2")); // --ask-mo2: test hook
 
 int lastPct = -1;
@@ -184,6 +192,12 @@ catch (Exception ex)
     return 1;
 }
 
+// The Linux shortcuts pass what Wine can't see: the real GPU, and the settings file inside the game's Proton prefix.
+if (opts.TryGetValue("vram", out var vramArg) && double.TryParse(vramArg, System.Globalization.CultureInfo.InvariantCulture, out var vramGb) && vramGb > 0)
+    result.Gpu = new GpuInfo(opts.GetValueOrDefault("gpu") ?? result.Gpu?.Name ?? "GPU", (long)(vramGb * (1L << 30)));
+if (opts.GetValueOrDefault("settings") is { } settingsArg)
+    result.Settings = GameSettings.Load(Platform.FromUser(settingsArg)) ?? result.Settings;
+
 long budget;
 if (opts.TryGetValue("budget", out var b) && double.TryParse(b, System.Globalization.CultureInfo.InvariantCulture, out var gb))
 {
@@ -192,7 +206,8 @@ if (opts.TryGetValue("budget", out var b) && double.TryParse(b, System.Globaliza
 }
 else (budget, result.BudgetWhy) = GpuInfo.SuggestBudget(result.Gpu?.VramBytes ?? 8L << 30, result.Settings);
 result.BudgetArchive ??= BudgetArchive.FindExisting(modRoot, fixDirs);
-var plan = BudgetPlan.Build(result, budget, includeNew: opts.ContainsKey("include-new-items"));
+int newItemsMax = opts.GetValueOrDefault("new-items-to")?.Trim().ToLowerInvariant() is "1k" or "1024" ? 1024 : 2048;
+var plan = BudgetPlan.Build(result, budget, includeNew: opts.ContainsKey("include-new-items"), newItemsMax);
 if (opts.ContainsKey("stress-all")) // developer stress test: halve every loaded 2K+ texture
     plan.Steps = result.Mods.SelectMany(m => m.Assets.Where(a => a.Kind == AssetKind.Texture && a.Loads && a.MaxDim >= 2048).Select(a => new PlanStep(m, a, 1, a.GpuBytes * 3 / 4))).ToList();
 
@@ -222,7 +237,9 @@ if (makingFix)
         // Show what each choice involves (counts, size, rough time) before asking.
         asked = true;
         var normal = BudgetPlan.Build(result, budget, includeNew: false);
-        var newSteps = BudgetPlan.Build(result, budget, includeNew: true).Steps.Where(s => !s.Asset.AlwaysLoaded).ToList();
+        List<PlanStep> NewItems(int max) => BudgetPlan.Build(result, budget, includeNew: true, max).Steps.Where(s => !s.Asset.AlwaysLoaded).ToList();
+        var to2k = NewItems(2048);
+        var to1k = NewItems(1024);
         var chosen = new List<PlanStep>();
         if (normal.Current <= normal.Budget)
             Console.WriteLine($"Normal play: your mods add about {Report.Size(normal.Current)} on top of the game; your card has room for {Report.Size(normal.Budget)}. Nothing to fix there.");
@@ -237,13 +254,27 @@ if (makingFix)
         if (normal.Current > normal.Budget && Report.SettingsTips(result) is { Length: > 0 } tips)
             Console.WriteLine($"  Lower settings also give mods more room (estimates): {tips}.");
         Console.WriteLine();
-        if (newSteps.Count == 0)
-            Console.WriteLine("New clothing, cars and props: none have 4K textures. Nothing to shrink there.");
+        if (to1k.Count == 0)
+            Console.WriteLine("New clothing, cars and props: none have textures of 2K or larger. Nothing to shrink there.");
         else
         {
-            Console.WriteLine($"New clothing, cars and props: {newSteps.Count:N0} texture(s) are 4K. They only use VRAM while you wear, drive or spawn them.");
-            Console.WriteLine($"  Shrinking them to 2K saves up to {Report.Size(newSteps.Sum(s => s.Saves))} while they're in use. {Describe(newSteps)}");
-            if (Ask("Also shrink these to 2K?")) chosen.AddRange(newSteps);
+            // 2K first; 1K is offered on top, since it's softer up close (fine on small screens like the Steam Deck's).
+            List<PlanStep>? pick = null;
+            if (to2k.Count > 0)
+            {
+                Console.WriteLine($"New clothing, cars and props: {to2k.Count:N0} texture(s) are 4K or larger. They only use VRAM while you wear, drive or spawn them.");
+                Console.WriteLine($"  Shrinking them to 2K saves up to {Report.Size(to2k.Sum(s => s.Saves))} while they're in use. {Describe(to2k)}");
+                if (Ask("Also shrink these to 2K?")) pick = to2k;
+            }
+            else Console.WriteLine($"New clothing, cars and props: {to1k.Count:N0} texture(s) are 2K. They only use VRAM while you wear, drive or spawn them.");
+            if (to2k.Count == 0 || pick != null)
+            {
+                long more = to1k.Sum(s => s.Saves) - (pick?.Sum(s => s.Saves) ?? 0);
+                Console.WriteLine($"  Going to 1K ({to1k.Count:N0} texture(s), 2K ones included) saves {(pick != null ? "another" : "up to")} {Report.Size(more)}. "
+                    + $"They look softer up close; on small screens like the Steam Deck's that's hard to see. {Describe(to1k)}");
+                if (Ask(pick != null ? "Go further, to 1K instead?" : "Shrink these to 1K?")) pick = to1k;
+            }
+            if (pick != null) chosen.AddRange(pick);
         }
         plan.Steps = chosen;
         Console.WriteLine();
@@ -257,7 +288,7 @@ if (makingFix)
                 ? "Nothing to fix: during normal play your mods already fit in your card's VRAM."
                 : "Nothing to fix: none of your mods' textures are big enough to halve (2K or larger).");
             if (!plan.IncludeNew && result.WhenUsedDelta > 0)
-                Console.WriteLine("New clothing, cars and props were left alone (add --include-new-items to shrink their 4K textures too).");
+                Console.WriteLine("New clothing, cars and props were left alone (add --include-new-items to shrink them to 2K, or also --new-items-to 1k).");
         }
     }
     else
@@ -329,10 +360,10 @@ if (makingFix)
         Console.WriteLine($"  Finished in {started.Elapsed.TotalSeconds:0}s.");
         Console.WriteLine();
         result.BudgetArchive = outcome.Path;
-        Console.WriteLine($"DONE: {outcome.Textures} texture(s) halved, saving up to {Report.Size(outcome.SavedBytes)} of VRAM.");
+        Console.WriteLine($"DONE: {outcome.Textures} texture(s) shrunk, saving up to {Report.Size(outcome.SavedBytes)} of VRAM.");
         Console.WriteLine();
         Console.WriteLine("The fix is ONE new file (your mods were not changed):");
-        Console.WriteLine($"  {outcome.Path}");
+        Console.WriteLine($"  {Platform.Shown(outcome.Path)}");
         if (outcome.Skipped.Count > 0) Console.WriteLine($"({outcome.Skipped.Count} texture(s) were skipped because their format can't be shrunk safely.)");
         Console.WriteLine();
         if (mo2ModFolder)
@@ -345,7 +376,7 @@ if (makingFix)
         else if (viaMo2)
         {
             Console.WriteLine("MOD ORGANIZER 2: your MO2 mods folder wasn't found, so the fix was saved as a ready-made mod folder:");
-            Console.WriteLine($"  {Path.GetDirectoryName(Path.GetDirectoryName(Path.GetDirectoryName(Path.GetDirectoryName(outcome.Path))))}");
+            Console.WriteLine($"  {Platform.Shown(Path.GetDirectoryName(Path.GetDirectoryName(Path.GetDirectoryName(Path.GetDirectoryName(outcome.Path))))!)}");
             Console.WriteLine("  Copy that folder into MO2's mods folder (or zip it and use MO2's \"Install a new mod from an archive\"), then enable it.");
         }
         else Console.WriteLine("Start the game as usual. To undo, double-click \"Undo budget fix.bat\".");
@@ -356,10 +387,20 @@ if (makingFix)
 
 if (opts.ContainsKey("share"))
 {
-    var sharePath = Path.Combine(outDir, "VRAM-RipperDoc-Share.json");
-    Community.WriteShare(result, sharePath);
-    Console.WriteLine($"Share file (anonymous: archive names and numbers only): {sharePath}");
-    Console.WriteLine("Submit it at https://github.com/La2o/Cyberpunk2077-VRAMRipperDoc-PerformanceOptimizer/issues/new?template=vram-cost.yml");
+    var shareFiles = Community.WriteShare(result, outDir);
+    const string shareUrl = "https://github.com/La2o/Cyberpunk2077-VRAMRipperDoc-PerformanceOptimizer/issues/new?template=vram-cost.yml";
+    if (shareFiles.Count == 1)
+    {
+        Console.WriteLine($"Share file (anonymous: archive names and numbers only): {Platform.Shown(shareFiles[0])}");
+        Console.WriteLine($"Submit it at {shareUrl}");
+    }
+    else
+    {
+        Console.WriteLine($"Share files (anonymous: archive names and numbers only), in {shareFiles.Count} parts because GitHub limits the size of one post:");
+        foreach (var f in shareFiles) Console.WriteLine($"  {Platform.Shown(f)}");
+        Console.WriteLine($"Submit part 1 at {shareUrl}");
+        Console.WriteLine("then paste each other part as a new comment on that same issue.");
+    }
 }
 
 var html = Path.Combine(outDir, "VRAM-RipperDoc-Report.html");
@@ -368,7 +409,7 @@ using (var fs = File.Create(json)) Report.WriteJson(result, plan, fs);
 Report.WriteHtml(result, plan, html);
 File.WriteAllText(Path.Combine(outDir, "VRAM-RipperDoc-Summary.md"), Summary.Markdown(result, plan));
 Console.WriteLine();
-Console.WriteLine($"Report: {html}");
+Console.WriteLine($"Report: {Platform.Shown(html)}");
 if (!opts.ContainsKey("no-open") && OperatingSystem.IsWindows())
     try
     {
@@ -383,7 +424,11 @@ return 0;
 void Pause()
 {
     // Double-clicked (no args): keep the window open so the summary can be read.
-    if ((args.Length == 0 || opts.ContainsKey("pause")) && !Console.IsInputRedirected) { Console.WriteLine("Press any key to close."); Console.ReadKey(true); }
+    if ((args.Length == 0 || opts.ContainsKey("pause")) && !Console.IsInputRedirected)
+    {
+        Console.WriteLine(Platform.IsWine ? "Press Enter to close." : "Press any key to close.");
+        if (Platform.IsWine) Console.ReadLine(); else Console.ReadKey(true);
+    }
 }
 
 static StreamWriter OpenLog(string path)
@@ -409,17 +454,20 @@ static void DisableQuickEdit()
 // Y/N question; works with a keyboard or piped input.
 bool Ask(string question)
 {
+    // Under Wine single key presses aren't reliable in a Linux terminal, so the answer is typed and ends with Enter.
+    bool lineInput = Console.IsInputRedirected || Platform.IsWine;
+    bool echoed = lineInput && !Console.IsInputRedirected; // the terminal already shows what was typed
     while (true)
     {
-        Console.Write($"{question} [Y/N] ");
+        Console.Write($"{question} [Y/N]{(echoed ? " then Enter" : "")} ");
         string? answer;
-        if (Console.IsInputRedirected) answer = Console.ReadLine();
+        if (lineInput) answer = Console.ReadLine();
         else { var k = Console.ReadKey(intercept: true); answer = k.KeyChar.ToString(); }
         if (answer == null) { Console.WriteLine("N"); return false; }
         answer = new string(answer.Where(char.IsLetter).ToArray()).ToUpperInvariant(); // ignores BOMs and stray characters
-        if (answer.StartsWith('Y')) { Console.WriteLine("Y"); return true; }
-        if (answer.StartsWith('N')) { Console.WriteLine("N"); return false; }
-        if (!Console.IsInputRedirected) Console.WriteLine();
+        if (answer.StartsWith('Y')) { if (!echoed) Console.WriteLine("Y"); return true; }
+        if (answer.StartsWith('N')) { if (!echoed) Console.WriteLine("N"); return false; }
+        if (!lineInput) Console.WriteLine();
     }
 }
 
@@ -454,8 +502,7 @@ string? AskForMo2()
     return Directory.Exists(answer) ? answer : null;
 }
 
-// A typed, pasted or dragged-in path: without the quotes Explorer adds, and without the BOM piped input can start with.
-static string? ReadPath() => Console.ReadLine()?.Trim().Trim('﻿').Trim().Trim('"');
+static string? ReadPath() => Platform.FromUser(Console.ReadLine());
 
 // MO2 runs tools through its virtual file system (usvfs); new files then land in "Overwrite".
 static bool UnderMo2()

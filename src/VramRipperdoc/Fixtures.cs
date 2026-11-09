@@ -218,3 +218,85 @@ public static class NameTest
         return bad == 0 ? 0 : 1;
     }
 }
+
+/// <summary>Paths typed or dragged in under Wine on Linux, and paths shown back to the player.</summary>
+public static class PathTest
+{
+    public static int Run()
+    {
+        var cases = new (string Input, bool Wine, string Expected)[]
+        {
+            ("/home/deck/.local/share/Steam/steamapps/common/Cyberpunk 2077", true, @"Z:\home\deck\.local\share\Steam\steamapps\common\Cyberpunk 2077"),
+            ("'/run/media/mmcblk0p1/steamapps/common/Cyberpunk 2077' ", true, @"Z:\run\media\mmcblk0p1\steamapps\common\Cyberpunk 2077"), // KDE/GNOME drop
+            ("file:///home/deck/Games/Cyberpunk%202077", true, @"Z:\home\deck\Games\Cyberpunk 2077"),
+            ("\uFEFF\"D:\\Games\\Cyberpunk 2077\"", true, @"D:\Games\Cyberpunk 2077"),          // a Windows path under Wine stays as it is
+            ("\"D:\\Games\\Cyberpunk 2077\"", false, @"D:\Games\Cyberpunk 2077"),             // Explorer drag-in on Windows
+            ("  C:\\GOG Games\\Cyberpunk 2077  ", false, @"C:\GOG Games\Cyberpunk 2077"),
+            ("2", true, "2"),                                                                 // MO2 menu choice
+        };
+        int bad = 0;
+        foreach (var (input, wine, expected) in cases)
+        {
+            var got = Platform.FromUser(input, wine);
+            bool ok = got == expected;
+            Console.WriteLine($"{(ok ? "OK " : "BAD")} {(wine ? "wine" : "win ")} [{input}] -> [{got}]");
+            if (!ok) bad++;
+        }
+        foreach (var (path, wine, expected) in new[] { (@"Z:\home\deck\RipperDoc\VRAM-RipperDoc-Report.html", true, "/home/deck/RipperDoc/VRAM-RipperDoc-Report.html"),
+                     (@"C:\users\steamuser\Documents", true, @"C:\users\steamuser\Documents"), (@"Z:\x", false, @"Z:\x") })
+        {
+            var got = Platform.Shown(path, wine);
+            bool ok = got == expected;
+            Console.WriteLine($"{(ok ? "OK " : "BAD")} shown {(wine ? "wine" : "win ")} [{path}] -> [{got}]");
+            if (!ok) bad++;
+        }
+        return bad == 0 ? 0 : 1;
+    }
+}
+
+/// <summary>--share with a huge load order: every part must fit in one GitHub post and no mod may be lost (issue #2).</summary>
+public static class ShareTest
+{
+    public static int Run()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), $"RipperDoc-ShareTest-{Environment.ProcessId}");
+        Directory.CreateDirectory(dir);
+        int bad = 0;
+        void Check(bool ok, string what) { Console.WriteLine($"{(ok ? "OK " : "BAD")} {what}"); if (!ok) bad++; }
+        try
+        {
+            foreach (var count in new[] { 2500, 10, 0 })
+            {
+                var r = new ScanResult();
+                for (int i = 0; i < count; i++)
+                {
+                    var name = i % 7 == 0 ? $"#Very Long Mod Name With Spaces And Version v1.2.3 - Part {i}.archive"
+                        : i % 11 == 0 ? $"赛博朋克_服装_{i}.archive" : $"Mod_{i}.archive";
+                    var m = new ModReport { Name = name, File = Path.Combine(@"C:\Users\someone\mods", name), DiskSize = 1_000_000L + i,
+                        Package = i % 3 == 0 ? $"Some Package \"{i}\"" : null, NexusId = i % 5 == 0 ? 10_000 + i : null };
+                    m.Assets.Add(new AssetInfo { Kind = AssetKind.Texture, GpuBytes = 22_369_621L * (i % 9 + 1), Tris0 = 0 });
+                    r.Mods.Add(m);
+                }
+                r.Mods.Add(new ModReport { Name = "Broken.archive", File = "Broken.archive", Error = "bad header" });  // never shared
+
+                var files = Community.WriteShare(r, dir);
+                var onDisk = Directory.GetFiles(dir, "VRAM-RipperDoc-Share*.json");
+                Check(onDisk.Length == files.Count, $"{count} mods: {files.Count} file(s), no leftovers from the previous run");
+                var archives = new List<string>();
+                foreach (var f in files)
+                {
+                    var text = File.ReadAllText(f);
+                    Check(text.Length <= Community.MaxPartChars, $"  {Path.GetFileName(f)}: {text.Length:N0} chars");
+                    Check(!text.Contains("someone") && !text.Contains(@"C:\"), "  no paths or user names");
+                    using var doc = System.Text.Json.JsonDocument.Parse(text);
+                    archives.AddRange(doc.RootElement.GetProperty("mods").EnumerateArray().Select(e => e.GetProperty("archive").GetString()!));
+                    Check(Community.Load(f, _ => { }).Count == doc.RootElement.GetProperty("mods").GetArrayLength(), "  readable by --community");
+                }
+                var expected = r.Mods.Where(m => m.Error == null).Select(m => m.Name).ToList();
+                Check(archives.SequenceEqual(expected), $"  all {expected.Count} mods present once, in order");
+            }
+        }
+        finally { Directory.Delete(dir, true); }
+        return bad == 0 ? 0 : 1;
+    }
+}

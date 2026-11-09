@@ -35,7 +35,11 @@ See [COMPARISON.md](COMPARISON.md) for how this differs from Ultra+, FrameFlow, 
 
 **Mod Organizer 2:** install the zip like any other mod and enable it. The files are in the mod's own folder (right-click the mod, *Open in Explorer*, then `tools\VRAM RipperDoc`).
 
-Requirements: Windows 10/11 x64. No .NET install is needed (the exe is self-contained). The tool reads and writes compressed data with the game's own `oo2ext_7_win64.dll`. Oodle is not bundled.
+**Linux and Steam Deck:** extract the zip anywhere and run the shortcuts in `tools/VRAM RipperDoc/Linux/` (on the Deck, in Desktop Mode). They run the exe through Wine or Steam's Proton, so if you play through Steam there is nothing to install. They find the game in your Steam libraries (SD card included), Heroic, Lutris or Bottles, read your settings from the game's Proton prefix, detect the GPU, and measure VRAM through the Linux kernel (AMD, Intel) or `nvidia-smi`. The tool runs in its own small Wine prefix (`~/.local/share/vram-ripperdoc`); the game's prefix is never changed. `START HERE (Linux).txt` explains the rest.
+
+Requirements: Windows 10/11 x64, or Linux with Proton or Wine 8+. No .NET install is needed (the exe is self-contained). The tool reads and writes compressed data with the game's own `oo2ext_7_win64.dll`. Oodle is not bundled.
+
+**"VramRipperdoc.exe is missing" or "is not recognized as an internal or external command":** your antivirus most likely removed the exe. Restore it from Windows Security > Virus & threat protection > Protection history (*Restore* or *Allow on device*), or download the zip again and unpack all of it.
 
 ## Use
 
@@ -48,12 +52,16 @@ Open `tools\VRAM RipperDoc\` and double-click the numbered shortcuts (`START HER
 | `3 - Measure VRAM in game.bat` | Asks for a name (for example *before* or *after*), then records real VRAM until you close the game. |
 | `Undo budget fix.bat` | Removes the budget archive wherever it was saved: the game folder, the MO2 mod "VRAM RipperDoc Budget Fix", or MO2's Overwrite folder (fixes made with v0.2.4 or older). |
 
+On Linux the same shortcuts are in the `Linux` folder as `.sh` files. `./ripperdoc.sh` there takes all the options below.
+
 Everything is also available from the command line:
 
 ```
  Scan (default, read-only)
   --game <dir>              Cyberpunk 2077 folder (auto-detected for Steam/GOG/Epic, or when run from inside it)
   --budget <GB>             VRAM your mods may add (default: from your GPU and in-game settings)
+  --vram <GB> [--gpu <name>]  Your graphics card's VRAM (default: detected)
+  --settings <file>         The game's UserSettings.json (default: detected)
   --out <dir>               Where to write reports (default: next to the exe)
   --mo2 <instance dir>      Read mods from a Mod Organizer 2 instance (auto-detected when possible)
   --hashes <file>           Optional list of depot paths (e.g. WolvenKit's archivehashes.csv) for nicer names
@@ -67,7 +75,7 @@ Everything is also available from the command line:
  Measure real VRAM
   --live [--label <name>] [--seconds <n>]   Record the game's actual VRAM use while you play (Ctrl+C to stop)
  Community (opt-in)
-  --share                   Write an anonymous per-mod cost file you can submit on GitHub
+  --share                   Write an anonymous per-mod cost file you can submit on GitHub (in parts for big mod lists)
   --community [file|url]    Show other players' reported costs (default: the project's GitHub list)
 ```
 
