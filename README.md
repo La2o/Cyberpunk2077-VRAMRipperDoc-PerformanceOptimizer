@@ -106,6 +106,8 @@ Everything is also available from the command line:
 
 For each planned texture, RipperDoc drops the top mip level. The remaining mips are the game's own pre-computed smaller versions, so nothing is re-encoded. It then fixes every size, offset and checksum in the file and writes it to `archive/pc/mod/!RipperDoc_Budget.archive`. The name is chosen so it loads before your mods, and it's added to the top of `modlist.txt` if you use one (with a backup).
 
+The fix also carries a small list (`ripperdoc\budget_fix_manifest.json` inside the archive; the game never loads it) of each texture it replaces and the SHA1 of the mod file it came from. Every scan compares that list with your installed mods and warns when the fix is out of date: a mod was updated (the fix would show the old texture) or removed (the fix would bring its texture back). Fixes made by v0.3.1 or older have no list, so for them only removed mods are detected.
+
 The writer follows the rules vanilla archives use, all verified against real game files: index CRC64/XZ, header and table CRC32s, a SHA1 per file, the file table sorted by hash, and the index and file size aligned to 4 KiB pages. The scanner can't see game logic, so character mods with mesh-matched textures still look the same, just at half resolution.
 
 ### Tested in game (Cyberpunk 2077 2.5, RTX 3070 8 GB, 1080p, RT on)
@@ -118,10 +120,11 @@ The writer follows the rules vanilla archives use, all verified against real gam
 
 1. Reads the game's load order: `archive/pc/mod` in ASCII order (or `modlist.txt`), then `mods/*/archives` (REDmod), plus MO2 mods that live outside the game folder. The first archive wins a conflict.
 2. Parses each RDAR archive index and decompresses each file's CR2W header with the game's Oodle DLL.
-3. **Textures:** reads `rendRenderTextureBlobPC` (size, mips, slices) and the compression. The uncompressed buffer size is the GPU footprint.
-4. **Meshes:** reads `rendRenderMeshBlob` chunk infos (index counts and LOD masks) for triangles and LODs.
-5. Indexes the vanilla `content` and `ep1` archives (about 550k files) to compute the delta for overrides, compare with vanilla resolution and triangles, spot identical copies, and tell which references the mod *added*. That last part means vanilla's own dead links never count as missing.
-6. Rebuilds file paths from the import tables and embedded buffers of every scanned file, and from ArchiveXL `.xl`, TweakXL and CET files.
+3. **What counts as VRAM:** only the buffers that a file's render blobs (`rendRender*Blob`) point to, which is what the renderer uploads to the GPU: textures, mesh geometry, morph targets and multilayer masks, also when they're embedded in materials, entities, prefabs or world sectors. Everything else (animations such as lipsync, appearances, world sector data, scenes) loads into system RAM and is listed as "other data". Up to v0.3.1 every buffer counted, which made animation, appearance and sector mods look far heavier than they are.
+4. **Textures:** reads `rendRenderTextureBlobPC` (size, mips, slices) and the compression. The uncompressed buffer size is the GPU footprint.
+5. **Meshes:** reads `rendRenderMeshBlob` chunk infos (index counts and LOD masks) for triangles and LODs.
+6. Indexes the vanilla `content` and `ep1` archives (about 550k files) to compute the delta for overrides, compare with vanilla resolution and triangles, spot identical copies, and tell which references the mod *added*. That last part means vanilla's own dead links never count as missing.
+7. Rebuilds file paths from the import tables and embedded buffers of every scanned file, and from ArchiveXL `.xl`, TweakXL and CET files.
 
 Validation on real game data:
 - 34,380 textures and 21,410 meshes parsed with 0 failures.

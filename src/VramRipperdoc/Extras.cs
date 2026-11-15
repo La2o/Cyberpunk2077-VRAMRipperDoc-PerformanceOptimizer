@@ -8,6 +8,9 @@ public static class History
 {
     public sealed record Entry(string Name, long Delta, int Textures, int Meshes, long Tris, int Flagged);
 
+    /// <summary>How VRAM is counted; scans made under another rule aren't compared. 2: only GPU data (v0.4.0).</summary>
+    const int Counting = 2;
+
     public static List<string> SaveAndDiff(ScanResult r, string outDir)
     {
         var dir = Path.Combine(outDir, "history");
@@ -18,7 +21,7 @@ public static class History
         using (var fs = File.Create(Path.Combine(dir, $"scan-{DateTime.Now:yyyyMMdd-HHmmss}.json")))
         using (var w = new Utf8JsonWriter(fs, new JsonWriterOptions { Indented = true }))
         {
-            w.WriteStartObject(); w.WriteNumber("total", r.TotalDelta); w.WriteStartArray("mods");
+            w.WriteStartObject(); w.WriteNumber("counting", Counting); w.WriteNumber("total", r.TotalDelta); w.WriteStartArray("mods");
             foreach (var e in current)
             {
                 w.WriteStartObject(); w.WriteString("name", e.Name); w.WriteNumber("delta", e.Delta); w.WriteNumber("textures", e.Textures);
@@ -32,6 +35,8 @@ public static class History
         try
         {
             using var doc = JsonDocument.Parse(File.ReadAllText(previous));
+            if (!doc.RootElement.TryGetProperty("counting", out var c) || c.GetInt32() != Counting)
+                return new() { "Not compared with your last scan: since v0.4.0 only data that goes to the graphics card counts as VRAM (animations and other data are listed apart), so the numbers changed." };
             long prevTotal = doc.RootElement.GetProperty("total").GetInt64();
             var prev = doc.RootElement.GetProperty("mods").EnumerateArray()
                 .ToDictionary(e => e.GetProperty("name").GetString()!, e => e.GetProperty("delta").GetInt64());
@@ -61,7 +66,7 @@ public static class Summary
         sb.AppendLine($"**VRAM RipperDoc v{Report.Version}** · {r.Mods.Count} archive mods · **{Report.Size(r.AlwaysDelta)}** extra in normal play · {Report.Size(r.WhenUsedDelta)} in new items (only when used)");
         if (r.Gpu != null) sb.AppendLine($"GPU: {r.Gpu.Name} ({Report.Size(r.Gpu.VramBytes)})" + (r.Settings != null ? $" · {r.Settings.Describe()}" : ""));
         sb.AppendLine($"Room for mods on top of the game: {Report.Size(plan.Budget)} ({r.BudgetWhy}) → {(plan.Current <= plan.Budget ? "fits" : $"{Report.Size(plan.Current - plan.Budget)} too much")}");
-        if (r.BudgetArchive != null) sb.AppendLine($"Budget archive active: `{Path.GetFileName(r.BudgetArchive)}`");
+        if (r.BudgetArchive != null) sb.AppendLine($"Budget archive active: `{Path.GetFileName(r.BudgetArchive)}`" + (r.FixCheck is { Stale: true } f ? $" (out of date: {f.Describe()})" : ""));
         sb.AppendLine();
         sb.AppendLine("| Mod | Normal play | When used | Tex | Mesh | Flags |");
         sb.AppendLine("|---|---:|---:|---:|---:|---:|");

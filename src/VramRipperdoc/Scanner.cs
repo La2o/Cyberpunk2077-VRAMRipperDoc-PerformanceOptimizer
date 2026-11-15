@@ -13,8 +13,10 @@ public sealed class AssetInfo
     public string Class = "";
     public AssetKind Kind = AssetKind.Other;
     public long DiskBytes;
-    /// <summary>Uncompressed buffer bytes: for textures/meshes this is what gets uploaded to the GPU.</summary>
+    /// <summary>Uncompressed buffer bytes the renderer uploads to the GPU (see <see cref="Cr2wFile.RenderBufferIndices"/>).</summary>
     public long GpuBytes;
+    /// <summary>The file's other buffer data (animations, appearances, world data...): system RAM, not VRAM.</summary>
+    public long DataBytes;
     public int Width, Height, Mips, Slices;
     public string? Compression;
     public long Tris0, Verts0;
@@ -73,6 +75,8 @@ public sealed class ModReport
     public int Overrides => Assets.Count(a => a.OverridesBase);
     public int Missing => Assets.Where(a => a.Loads).Sum(a => a.MissingImports.Count);
     public int FlagCount => Assets.Count(a => a.Flags.Count > 0 && a.Loads);
+    /// <summary>Data that loads into system RAM, not VRAM (e.g. a lipsync archive full of animations).</summary>
+    public long DataBytes => Assets.Where(a => a.Loads).Sum(a => a.DataBytes);
 }
 
 public sealed class ScanResult
@@ -91,6 +95,9 @@ public sealed class ScanResult
     public long TotalDelta => Mods.Sum(m => m.GpuDelta);
     public long AlwaysDelta => Mods.Sum(m => m.AlwaysDelta);
     public long WhenUsedDelta => Mods.Sum(m => m.WhenUsedDelta);
+    public long DataBytes => Mods.Sum(m => m.DataBytes);
+    /// <summary>Whether an existing budget fix still matches the installed mods (null when there is no fix).</summary>
+    public BudgetArchive.FixCheck? FixCheck;
 }
 
 public sealed class ScanOptions
@@ -373,7 +380,6 @@ public sealed class Scanner
         {
             Hash = e.Hash,
             DiskBytes = a.SegmentsOf(e).Sum(s => (long)s.ZSize),
-            GpuBytes = a.BufferBytesOf(e),
             Sha1 = e.Sha1,
         };
         var imports = ReadDetails(a, e, info, collectNames: true);
@@ -383,11 +389,11 @@ public sealed class Scanner
             info.OverridesBase = true;
             var ba = _base[b.Archive];
             var be = ba.Entries[b.Entry];
-            info.BaseGpuBytes = ba.BufferBytesOf(be);
             info.IdenticalToVanilla = be.Sha1.AsSpan().SequenceEqual(e.Sha1);
             var vanilla = new AssetInfo();
             List<(string, ushort)> baseImports;
             lock (ba) baseImports = ReadDetails(ba, be, vanilla, collectNames: false);
+            info.BaseGpuBytes = vanilla.GpuBytes; // same rule as the mod's file, so a replaced animation costs 0 either way
             info.BaseWidth = vanilla.Width; info.BaseHeight = vanilla.Height; info.BaseTris0 = vanilla.Tris0;
             var known = new HashSet<string>(baseImports.Select(i => i.Item1), StringComparer.OrdinalIgnoreCase);
             info.NewImports = imports.Where(i => IsHardImport(i.Item2) && !known.Contains(i.Item1)).Select(i => i.Item1).ToList();
@@ -402,6 +408,9 @@ public sealed class Scanner
     List<(string Path, ushort Flags)> ReadDetails(RdarArchive a, ArchiveEntry e, AssetInfo info, bool collectNames)
     {
         var imports = new List<(string, ushort)>();
+        // Until the header says otherwise (or when it can't be read, e.g. without Oodle), all buffer data counts as VRAM.
+        info.GpuBytes = a.BufferBytesOf(e);
+        info.DataBytes = 0;
         if (e.SegmentsEnd <= e.SegmentsStart) return imports;
         byte[]? head;
         try { head = a.ReadSegment(a.Segments[(int)e.SegmentsStart]); } catch { return imports; }
@@ -409,6 +418,22 @@ public sealed class Scanner
         Cr2wFile c;
         try { c = new Cr2wFile(head); } catch { return imports; }
         info.Class = c.RootClass;
+        // Texture files are texture data through and through. Anything else counts only the buffers its render blobs
+        // point to: a lipsync archive full of animations, or an appearance or world sector file, mostly sits in RAM.
+        if (c.RootClass is not ("CBitmapTexture" or "CTextureArray" or "CCubeTexture" or "CReflectionProbeDataResource"))
+        {
+            var buffers = a.SegmentsOf(e).Skip(1).ToList();
+            try
+            {
+                if (c.RenderBufferIndices() is { } gpu && c.Buffers.Count == buffers.Count)
+                {
+                    long all = info.GpuBytes;
+                    info.GpuBytes = gpu.Where(i => i >= 0 && i < buffers.Count).Sum(i => (long)buffers[i].Size);
+                    info.DataBytes = all - info.GpuBytes;
+                }
+            }
+            catch { /* unknown layout: keep counting everything */ }
+        }
         imports.AddRange(c.Imports.Zip(c.ImportFlags));
         if (collectNames)
         {

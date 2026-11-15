@@ -91,7 +91,10 @@ The numbers are the mod's own textures and 3D models. Vehicle mods often ship 4K
 Only if you're running out of VRAM, which shows up as stutter and textures loading late. If you have plenty to spare, it won't change your FPS.
 
 [b]I updated my mods. Do I need to redo the fix?[/b]
-Run 2 - Apply budget fix again; it replaces the old fix file. The report also shows what changed since your last scan.
+Yes: run 2 - Apply budget fix again; it replaces the old fix file. Since v0.4.0 the scan tells you when it's needed: if a mod the fix took textures from was updated or removed, the report says "The budget fix is out of date". (Until then, the fix keeps showing the old versions of those textures, or textures of a mod you removed.) The report also shows what changed since your last scan.
+
+[b]Immersive Third Person's lipsync file showed 1–2 GB of VRAM. Should I delete it?[/b]
+No. That file holds V's lip-sync animations, and animations load into system RAM, not into your graphics card's VRAM. Versions up to 0.3.1 counted every kind of data as VRAM, which made animation, appearance and world files look far heavier than they are. Since v0.4.0 only data that goes to the graphics card counts (textures, models, morph targets, masks); the rest is shown as "other data (system RAM, not VRAM)". Deleting the lipsync file only removes the lip sync. If you deleted it, reinstall Immersive Third Person to get it back.
 [/spoiler]
 
 [size=4][b]How it's different from other performance mods[/b][/size]
@@ -111,7 +114,7 @@ Use it [i]alongside[/i] any of these.
 [spoiler]
 [list]
 [*]Reads the game's load order (archive\pc\mod in ASCII order or modlist.txt, then REDmod, plus MO2 mods outside the game folder). The first archive wins a conflict.
-[*]Parses RDAR archives and CR2W headers with the game's own Oodle DLL. Texture cost comes from the rendRenderTextureBlobPC buffer size, mesh triangles and LODs from rendRenderMeshBlob chunk infos.
+[*]Parses RDAR archives and CR2W headers with the game's own Oodle DLL. VRAM counts only the buffers that render blobs (rendRender*Blob: textures, meshes, morph targets, multilayer masks, also embedded in materials, entities and sectors) point to; animations, appearances and other data are listed as system RAM. Mesh triangles and LODs come from rendRenderMeshBlob chunk infos.
 [*]Compares against the vanilla content and ep1 archives (about 550k files), so costs are deltas and only references the mod [i]added[/i] can count as missing.
 [*]"Normal play" = files that override vanilla plus new files reachable from them through references; everything else counts as "when used".
 [*]Flags: 4K/8K textures, no mipmaps, uncompressed textures, N× vanilla pixels or triangles, no LODs, dense meshes, missing hard imports, identical-to-vanilla files, duplicates, likely unused files.

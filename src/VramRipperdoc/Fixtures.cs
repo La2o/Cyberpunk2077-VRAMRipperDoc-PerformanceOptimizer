@@ -159,7 +159,8 @@ public static class IngameTest
 /// <summary>Developer speed test: a fake "new clothing" mod made of N real 4K textures under new paths.</summary>
 public static class HeavyFixture
 {
-    public static int Make(string game, string outRoot, int count)
+    /// <param name="offset">Shifts which texture goes under which path: a different version of the same mod.</param>
+    public static int Make(string game, string outRoot, int count, int offset = 0)
     {
         Oodle.TryLoad(new[] { Path.Combine(game, "bin", "x64", "oo2ext_7_win64.dll") });
         var w = new ArchiveWriter();
@@ -179,7 +180,7 @@ public static class HeavyFixture
         // Vanilla has few 4K textures, so reuse them under different paths to reach the requested count.
         for (int i = 0; picks.Count > 0 && n < count; i++)
         {
-            var (src, e) = picks[i % picks.Count];
+            var (src, e) = picks[(i + offset) % picks.Count];
             w.Add(src, e, Fnv1a64.Hash($@"heavymod\textures\t{n++}.xbm"));
         }
         foreach (var s in sources) s.Dispose();
@@ -216,6 +217,93 @@ public static class NameTest
             if (!ok) bad++;
         }
         return bad == 0 ? 0 : 1;
+    }
+}
+
+/// <summary>
+/// Developer survey: which CR2W root classes carry buffer data in the vanilla archives, and which of them hold a
+/// rendRender*Blob (data the renderer uploads to the GPU). Decides what counts as VRAM.
+/// </summary>
+public static class ClassStats
+{
+    public static int Run(string game, int every)
+    {
+        Oodle.TryLoad(new[] { Path.Combine(game, "bin", "x64", "oo2ext_7_win64.dll") });
+        var stats = new Dictionary<string, (int Files, long Bytes, HashSet<string> Blobs)>();
+        var archives = Directory.GetFiles(Path.Combine(game, "archive", "pc"), "*.archive", SearchOption.AllDirectories)
+            .Where(f => !Path.GetFileName(f).StartsWith("lang_") || Path.GetFileName(f).StartsWith("lang_en_voice"));
+        foreach (var file in archives)
+        {
+            using var a = new RdarArchive(file);
+            int i = 0;
+            foreach (var e in a.Entries)
+            {
+                long buffers = a.BufferBytesOf(e);
+                if (buffers == 0 || i++ % every != 0) continue;
+                string cls = "(no CR2W header)"; var blobs = new HashSet<string>();
+                try
+                {
+                    var head = a.ReadSegment(a.Segments[(int)e.SegmentsStart]);
+                    if (head != null && head.Length > 4 && head[0] == 'C' && head[1] == 'R')
+                    {
+                        var c = new Cr2wFile(head);
+                        cls = c.RootClass;
+                        foreach (var x in c.Exports) if (x.ClassName.StartsWith("rendRender")) blobs.Add(x.ClassName);
+                    }
+                }
+                catch { cls = "(unreadable)"; }
+                (int Files, long Bytes, HashSet<string> Blobs) s = stats.TryGetValue(cls, out var v) ? v : (0, 0L, new HashSet<string>());
+                s.Blobs.UnionWith(blobs);
+                stats[cls] = (s.Files + 1, s.Bytes + buffers * every, s.Blobs);
+            }
+        }
+        Console.WriteLine($"{"Root class",-40} {"Files",8} {"Buffers (est.)",14}  rendRender* exports");
+        foreach (var (cls, s) in stats.OrderByDescending(kv => kv.Value.Bytes).Take(45))
+            Console.WriteLine($"{cls,-40} {s.Files * every,8} {Report.Size(s.Bytes),14}  {string.Join(", ", s.Blobs)}");
+        return 0;
+    }
+}
+
+/// <summary>
+/// Developer test for what counts as VRAM: real vanilla files of each kind (lipsync animations, appearances, entities,
+/// world sectors, masks, morph targets, meshes, textures) copied under new paths, plus one animation that replaces its
+/// vanilla file, as one fake mod.
+/// </summary>
+public static class ClassFixture
+{
+    public static int Make(string game, string outRoot, int perClass)
+    {
+        Oodle.TryLoad(new[] { Path.Combine(game, "bin", "x64", "oo2ext_7_win64.dll") });
+        var wanted = new[] { "animAnimSet", "appearanceAppearanceResource", "entEntityTemplate", "worldStreamingSector",
+            "Multilayer_Mask", "MorphTargetMesh", "CMesh", "CBitmapTexture", "CMaterialInstance" };
+        var picked = wanted.ToDictionary(c => c, _ => 0);
+        var w = new ArchiveWriter();
+        var opened = new List<RdarArchive>();
+        bool overrideAdded = false;
+        foreach (var name in new[] { "lang_en_voice", "basegame_4_animation", "basegame_4_appearance", "basegame_3_nightcity", "basegame_1_engine" })
+        {
+            var file = Directory.GetFiles(Path.Combine(game, "archive", "pc"), name + ".archive", SearchOption.AllDirectories).FirstOrDefault();
+            if (file == null) continue;
+            var a = new RdarArchive(file); opened.Add(a);
+            foreach (var e in a.Entries)
+            {
+                if (picked.Values.All(n => n >= perClass)) break;
+                if (a.BufferBytesOf(e) < 64 * 1024) continue;
+                var head = a.ReadSegment(a.Segments[(int)e.SegmentsStart]);
+                if (head == null || head[0] != 'C') continue;
+                var cls = new Cr2wFile(head).RootClass;
+                if (!picked.TryGetValue(cls, out int n) || n >= perClass) continue;
+                // The first lipsync animation keeps its vanilla path: a mod that replaces a game animation.
+                bool asOverride = cls == "animAnimSet" && !overrideAdded;
+                w.Add(a, e, asOverride ? null : Fnv1a64.Hash($@"classfixture\{cls}\f{n}.bin"));
+                overrideAdded |= asOverride;
+                picked[cls] = n + 1;
+            }
+        }
+        w.Write(Path.Combine(outRoot, "archive", "pc", "mod", "MixedClasses.archive"));
+        foreach (var a in opened) a.Dispose();
+        Console.WriteLine("Picked: " + string.Join(", ", picked.Select(kv => $"{kv.Key} {kv.Value}")));
+        return 0;
     }
 }
 

@@ -69,10 +69,13 @@ if (opts.TryGetValue("verify-shrink", out var shrinkArchive) && shrinkArchive !=
 if (opts.TryGetValue("ingame-test", out var ingameCount) && ingameCount != null)
     return IngameTest.Make(FindGame(opts.GetValueOrDefault("game"))!, int.Parse(ingameCount), opts.ContainsKey("copy-only"));
 if (opts.TryGetValue("make-heavy", out var heavyOut) && heavyOut != null)
-    return HeavyFixture.Make(FindGame(null)!, heavyOut, int.Parse(opts.GetValueOrDefault("count") ?? "300"));
+    return HeavyFixture.Make(FindGame(null)!, heavyOut, int.Parse(opts.GetValueOrDefault("count") ?? "300"), int.Parse(opts.GetValueOrDefault("offset") ?? "0"));
 if (opts.ContainsKey("test-names")) return NameTest.Run();
 if (opts.ContainsKey("test-share")) return ShareTest.Run();
 if (opts.ContainsKey("test-paths")) return PathTest.Run();
+if (opts.TryGetValue("make-classes", out var classesOut) && classesOut != null)
+    return ClassFixture.Make(FindGame(opts.GetValueOrDefault("game"))!, classesOut, int.Parse(opts.GetValueOrDefault("count") ?? "3"));
+if (opts.TryGetValue("class-stats", out var every) && every != null) return ClassStats.Run(FindGame(opts.GetValueOrDefault("game"))!, int.Parse(every));
 if (opts.TryGetValue("test-epic", out var epicDir) && epicDir != null)
 {
     foreach (var dir in EpicInstallLocations(epicDir)) Console.WriteLine($"{dir}  game={IsGame(dir)}");
@@ -206,6 +209,7 @@ if (opts.TryGetValue("budget", out var b) && double.TryParse(b, System.Globaliza
 }
 else (budget, result.BudgetWhy) = GpuInfo.SuggestBudget(result.Gpu?.VramBytes ?? 8L << 30, result.Settings);
 result.BudgetArchive ??= BudgetArchive.FindExisting(modRoot, fixDirs);
+if (result.BudgetArchive != null) result.FixCheck = BudgetArchive.Check(result.BudgetArchive, result);
 int newItemsMax = opts.GetValueOrDefault("new-items-to")?.Trim().ToLowerInvariant() is "1k" or "1024" ? 1024 : 2048;
 var plan = BudgetPlan.Build(result, budget, includeNew: opts.ContainsKey("include-new-items"), newItemsMax);
 if (opts.ContainsKey("stress-all")) // developer stress test: halve every loaded 2K+ texture

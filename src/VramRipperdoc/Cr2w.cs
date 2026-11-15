@@ -75,6 +75,45 @@ public sealed class Cr2wFile
 
     public string Name(int idx) => idx >= 0 && idx < Names.Count ? Names[idx] : $"#{idx}";
 
+    /// <summary>
+    /// The buffers (0-based) that rendRender*Blob exports point to: the data the renderer uploads to the GPU (textures,
+    /// mesh geometry, morph targets, multilayer masks, also when embedded in materials, entities or world sectors).
+    /// Empty when the file has no such export (animations, appearances, scenes...: system RAM only). Null when it has
+    /// one but no buffer reference could be read, so the caller can fall back to counting everything.
+    /// </summary>
+    public HashSet<int>? RenderBufferIndices()
+    {
+        var set = new HashSet<int>();
+        bool render = false;
+        for (int i = 0; i < Exports.Count; i++)
+        {
+            if (!Exports[i].ClassName.StartsWith("rendRender")) continue;
+            render = true;
+            foreach (var (_, type, raw) in RawProperties(i))
+                if (type == "DataBuffer" && raw.Length >= 4) set.Add((int)(BitConverter.ToUInt32(raw) & 0xFFFF) - 1); // 0x80000000 | 1-based index
+                else if (type == "serializationDeferredDataBuffer" && raw.Length >= 2) set.Add(BitConverter.ToUInt16(raw) - 1);
+        }
+        return !render || set.Count > 0 ? set : null;
+    }
+
+    /// <summary>Every property (name, type, raw bytes) of one export, without decoding the values.</summary>
+    public List<(string Name, string Type, byte[] Raw)> RawProperties(int index)
+    {
+        var list = new List<(string, string, byte[])>();
+        var ex = Exports[index];
+        int p = (int)ex.DataOffset + 1, end = (int)(ex.DataOffset + ex.DataSize);
+        while (p + 8 <= end)
+        {
+            ushort nameId = BitConverter.ToUInt16(_data, p); if (nameId == 0) break;
+            ushort typeId = BitConverter.ToUInt16(_data, p + 2);
+            int size = (int)BitConverter.ToUInt32(_data, p + 4) - 4;
+            if (size < 0 || p + 8 + size > end) break;
+            list.Add((Name(nameId), Name(typeId), _data[(p + 8)..(p + 8 + size)]));
+            p += 8 + size;
+        }
+        return list;
+    }
+
     public string RootClass => Exports.Count > 0 ? Exports[0].ClassName : "";
 
     /// <summary>Reads the top-level properties of an export into a loose tree (Dictionary / List / primitives).</summary>
