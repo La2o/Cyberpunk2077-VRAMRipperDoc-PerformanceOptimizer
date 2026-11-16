@@ -1,0 +1,501 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>VRAM RipperDoc</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%23fcee0a'/%3E%3Cpath d='M6 8h5.4L16 20.2 20.6 8H26l-7.4 17h-5.2z' fill='%230b0d12'/%3E%3C/svg%3E">
+<style>
+:root{--bg:#0b0d12;--panel:#141821;--line:#262c3a;--fg:#e6e8ee;--dim:#8b93a7;--acc:#fcee0a;--accfg:#000;--hot:#ff4d6d;--ok:#3ddc97;--cy:#2de2e6;--okbg:#10281f;--badbg:#2e1219;--warnbg:#2b2810}
+@media (prefers-color-scheme: light){:root:not([data-theme=dark]){--bg:#f6f7f9;--panel:#fff;--line:#dde1e8;--fg:#14161c;--dim:#5b6375;--acc:#8a7d00;--accfg:#fff;--hot:#c8102e;--ok:#0a8a5a;--cy:#007c80;--okbg:#e6f6ee;--badbg:#fbe9ec;--warnbg:#fbf6d8}}
+:root[data-theme=light]{--bg:#f6f7f9;--panel:#fff;--line:#dde1e8;--fg:#14161c;--dim:#5b6375;--acc:#8a7d00;--accfg:#fff;--hot:#c8102e;--ok:#0a8a5a;--cy:#007c80;--okbg:#e6f6ee;--badbg:#fbe9ec;--warnbg:#fbf6d8}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.45 system-ui,Segoe UI,sans-serif}
+main{max-width:1200px;margin:0 auto;padding:16px 16px 64px}
+a{color:var(--cy)}
+:focus-visible{outline:2px solid var(--cy);outline-offset:2px}
+[hidden]{display:none!important}
+h1{font-size:20px;margin:0;letter-spacing:.5px}h1 b{color:var(--acc)}h1 small{font-size:12px;color:var(--dim);font-weight:400;margin-left:6px}
+h2{font-size:15px;margin:0 0 10px}h3{font-size:14px;margin:14px 0 6px}
+p{margin:0 0 10px}
+code,.mono{font-family:ui-monospace,Consolas,monospace;font-size:12px;word-break:break-all}
+.note{color:var(--dim);font-size:12.5px}.ok{color:var(--ok)}.warn,.hot{color:var(--hot)}.neg{color:var(--ok)}
+/* header */
+#hdr{border-bottom:1px solid var(--line);background:var(--panel)}
+.hdr{max-width:1200px;margin:0 auto;padding:12px 16px;display:flex;flex-wrap:wrap;gap:6px 24px;align-items:center}
+.hdr .meta{display:flex;flex-direction:column;gap:2px;min-width:0;flex:1}
+.hdr .meta div{display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:13px}.hdr .meta .k{color:var(--dim);min-width:40px}
+.hdr .path{overflow-wrap:anywhere}
+/* buttons and inputs */
+button{background:var(--bg);color:var(--fg);border:1px solid var(--line);border-radius:6px;padding:7px 12px;cursor:pointer;font:inherit}
+button:hover:not(:disabled){border-color:var(--acc)}button:disabled{opacity:.45;cursor:not-allowed}
+button.primary{background:var(--acc);color:var(--accfg);border-color:var(--acc);font-weight:600}
+button.big{font-size:18px;padding:14px 28px;border-radius:8px}
+button.small{padding:3px 9px;font-size:12.5px}
+button.link{background:none;border:0;padding:0;color:var(--cy);text-decoration:underline}
+input[type=text]{background:var(--bg);color:var(--fg);border:1px solid var(--line);border-radius:6px;padding:7px 9px;width:100%;font:inherit}
+input[type=checkbox],input[type=radio]{accent-color:var(--acc);width:16px;height:16px;margin:0;flex:none}
+label.opt{display:flex;gap:10px;align-items:flex-start;padding:8px 10px;border:1px solid var(--line);border-radius:8px;margin-bottom:8px;cursor:pointer}
+label.opt.off{opacity:.55;cursor:not-allowed}label.opt b{display:block}
+fieldset{border:0;padding:0;margin:0}legend{font-weight:600;margin-bottom:6px;padding:0}
+/* layout blocks */
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:14px;margin-bottom:16px}
+.actions{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:16px 0 6px}.actions .sp{flex:1}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;margin-bottom:16px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:12px}
+.card .k{color:var(--dim);font-size:12px;text-transform:uppercase;letter-spacing:.06em}
+.card .v{font-size:22px;font-weight:600;margin-top:4px;font-variant-numeric:tabular-nums}.card .s{font-size:12px;color:var(--dim);overflow-wrap:anywhere}
+.msg{display:flex;gap:10px;align-items:flex-start;border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin:12px 0}
+.msg.ok{background:var(--okbg);border-color:var(--ok);color:var(--fg)}.msg.err{background:var(--badbg);border-color:var(--hot)}
+.msg .body{flex:1}.msg ul{margin:6px 0 0;padding-left:20px}
+.hero{text-align:center;padding:40px 20px}.hero h2{font-size:22px}.hero p{max-width:560px;margin:0 auto 14px}
+.job{border-color:var(--acc)}
+.job .top{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:baseline}
+.job .what{font-weight:600}.job .keep{font-size:12.5px;color:var(--dim);margin:8px 0 0}
+.bar{height:8px;background:var(--line);border-radius:4px;overflow:hidden;margin:10px 0 6px;position:relative}
+.bar i{display:block;height:100%;background:var(--acc);border-radius:4px;transition:width .4s}
+.bar.ind i{width:30%;position:absolute;animation:slide 1.3s infinite ease-in-out}
+@keyframes slide{from{left:-30%}to{left:100%}}
+.spin{display:inline-block;width:12px;height:12px;border:2px solid var(--line);border-top-color:var(--acc);border-radius:50%;animation:rot 1s linear infinite;vertical-align:-1px;margin-right:6px}
+@keyframes rot{to{transform:rotate(360deg)}}
+.probs{list-style:none;margin:0;padding:0}.probs li{padding:8px 0;border-top:1px solid var(--line)}.probs li:first-child{border-top:0;padding-top:0}
+.tag{display:inline-block;font-size:11px;padding:1px 6px;border-radius:10px;border:1px solid var(--hot);color:var(--hot);margin:1px 4px 1px 0}
+.tag.dead{border-color:var(--dim);color:var(--dim)}
+.confirm{background:var(--warnbg);border:1px solid var(--acc);border-radius:8px;padding:10px 12px;margin:8px 0;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+/* table */
+.tools{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-bottom:8px}.tools input[type=text]{max-width:300px}
+.tools label{display:flex;gap:6px;align-items:center}
+.tblwrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}
+th,td{padding:7px 8px;border-bottom:1px solid var(--line);text-align:right;vertical-align:top}
+th{color:var(--dim);font-weight:500;font-size:12px;white-space:nowrap}
+th button{background:none;border:0;padding:0;color:inherit;font:inherit;cursor:pointer}th button:hover{color:var(--fg)}
+.l{text-align:left}td.num{white-space:nowrap}
+tr.mod:hover{background:color-mix(in srgb,var(--acc) 8%,transparent)}
+td.big{font-size:15px;font-weight:600}td.big .mb{height:4px;background:var(--line);border-radius:2px;margin-top:4px;min-width:70px}td.big .mb i{display:block;height:100%;background:var(--acc);border-radius:2px}
+.modname{background:none;border:0;padding:0;text-align:left;font-weight:600;color:var(--fg);cursor:pointer;overflow-wrap:anywhere}.modname:hover{color:var(--acc)}
+tr.detail td{background:var(--bg);text-align:left}tr.detail table td{font-size:12.5px}
+.name{min-width:170px;font-family:ui-monospace,Consolas,monospace;font-size:12px;overflow-wrap:anywhere}
+@media (max-width:1150px){.opt2{display:none}}
+/* dialog */
+dialog{background:var(--panel);color:var(--fg);border:1px solid var(--line);border-radius:10px;padding:0;width:min(660px,94vw);max-height:92vh}
+dialog::backdrop{background:rgba(0,0,0,.6)}
+.dhead{display:flex;justify-content:space-between;align-items:center;padding:14px 18px;border-bottom:1px solid var(--line)}.dhead h2{margin:0;font-size:17px}
+.dbody{padding:16px 18px;overflow-y:auto;max-height:calc(92vh - 60px)}
+.dbtns{display:flex;gap:8px;justify-content:flex-end;margin-top:14px;flex-wrap:wrap}
+.sum{background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin-top:12px}
+.errmsg{color:var(--hot);margin:8px 0 0}
+.live{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin:10px 0}
+.live .big{font-size:34px;font-weight:700;color:var(--acc);font-variant-numeric:tabular-nums;grid-column:1/-1}
+.live .k{font-size:12px;color:var(--dim)}.live .v{font-size:18px;font-weight:600}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.row input[type=text]{flex:1;min-width:200px}
+textarea{width:100%;height:220px;background:var(--bg);color:var(--fg);border:1px solid var(--line);border-radius:6px;font:12px ui-monospace,Consolas,monospace}
+/* overlays */
+#closed{position:fixed;inset:0;background:var(--bg);display:flex;align-items:center;justify-content:center;text-align:center;z-index:50;padding:20px}
+#closed h2{font-size:24px}
+#fatal{position:fixed;left:0;right:0;bottom:0;background:#c8102e;color:#fff;padding:8px 12px;font:12px ui-monospace,Consolas,monospace;z-index:99;white-space:pre-wrap}
+</style></head><body>
+<header id="hdr"></header>
+<main>
+<div id="msgs"></div>
+<div id="jobbox"></div>
+<div id="actions"></div>
+<div id="view"><p class="note" style="margin-top:24px">Loading...</p></div>
+</main>
+<dialog id="dlg" aria-labelledby="dtitle"></dialog>
+<div id="closed" hidden><div><h2>VRAM RipperDoc was closed.</h2><p>You can close this window.</p><p class="note">If you expected it to be running, start VRAM RipperDoc again and press the button.</p><button id="retry" class="primary">Try again</button></div></div>
+<div id="fatal" hidden></div>
+<script>
+'use strict';
+const $=s=>document.querySelector(s);
+const sz=b=>{const s=b<0?'-':'',v=Math.abs(b);return v>=2**30?s+(v/2**30).toFixed(2)+' GB':v>=2**20?s+(v/2**20).toFixed(1)+' MB':v>=1024?s+(v/1024).toFixed(0)+' KB':s+v+' B'};
+const qs=new URLSearchParams(location.search);
+const DEMO=location.protocol==='file:'||qs.has('demo');
+const TOKEN=qs.get('t')||'';
+if(qs.get('theme')==='dark'||qs.get('theme')==='light')document.documentElement.dataset.theme=qs.get('theme');
+window.addEventListener('error',e=>{const f=$('#fatal');f.hidden=false;f.textContent+=(e.message||e.error)+' @'+e.lineno+'\n'});
+window.addEventListener('unhandledrejection',e=>{const f=$('#fatal');f.hidden=false;f.textContent+='Unhandled: '+(e.reason&&e.reason.stack||e.reason)+'\n'});
+
+// ---- tiny DOM builder: strings always become text nodes, never HTML ----
+function h(tag,a,...kids){const e=document.createElement(tag);
+ for(const k in a||{}){const v=a[k];if(v==null||v===false)continue;
+  if(k.startsWith('on'))e.addEventListener(k.slice(2),v);
+  else if(k==='class')e.className=v;
+  else if(k==='value'||k==='checked'||k==='disabled'||k==='hidden')e[k]=v;
+  else e.setAttribute(k,v===true?'':v);}
+ kids.forEach(x=>add(e,x));return e}
+function add(e,x){if(x==null||x===false)return;if(Array.isArray(x))x.forEach(y=>add(e,y));else e.append(x instanceof Node?x:document.createTextNode(String(x)))}
+function put(e,...kids){e.replaceChildren();kids.forEach(x=>add(e,x))}
+const p=(cls,...k)=>{const a={class:cls};if(k[0]&&typeof k[0]==='object'&&!(k[0] instanceof Node)&&!Array.isArray(k[0]))Object.assign(a,k.shift());return h('p',a,...k)},b=t=>h('b',null,t);
+const sum=(a,k)=>a.reduce((n,m)=>n+(m[k]||0),0);
+const fmtClock=s=>{s=Math.max(0,Math.round(s));return Math.floor(s/60)+':'+String(s%60).padStart(2,'0')};
+const fmtLeft=s=>s<10?'a few seconds':s<90?'about '+Math.round(s)+' seconds':'about '+Math.ceil(s/60)+' minutes';
+const fmtDate=s=>{const d=new Date(s);return isNaN(d)?String(s||''):d.toLocaleString()};
+
+// ---- state ----
+let S=null,ui={sortK:'always',sortD:-1,open:new Set(),q:'',grp:false,notes:[],undo:false,dismissed:null,liveErr:'',liveLabel:null,dlgUpdate:null};
+const wine=()=>S&&S.platform==='wine';
+const busy=()=>!!(S&&S.busy);
+const keyOf=m=>m.package||m.name;
+
+async function api(method,path,body){
+ if(DEMO)return Demo.api(method,path,body);
+ let r;
+ try{r=await fetch(path,{method,headers:Object.assign({'X-RipperDoc-Token':TOKEN},body===undefined?{}:{'Content-Type':'application/json'}),body:body===undefined?undefined:JSON.stringify(body)})}
+ catch(e){throw new Error("Can't reach VRAM RipperDoc. It may have been closed.")}
+ let j=null;try{j=await r.json()}catch{}
+ if(!r.ok)throw new Error((j&&j.error)||'Something went wrong ('+r.status+').');
+ return j}
+function notify(kind,text,extra){ui.notes.push({kind,text,extra});renderNotes()}
+async function act(method,path,body){try{return await api(method,path,body)}catch(e){notify('err',e.message);return null}}
+async function refresh(){try{S=await api('GET','/api/state');setLost(false);render()}catch(e){setLost(true)}}
+function setLost(v){$('#closed').hidden=!v}
+function focusSave(){const a=document.activeElement;return a&&a.dataset&&a.dataset.fid?{id:a.dataset.fid,s:a.selectionStart,e:a.selectionEnd}:null}
+function focusRestore(f){if(!f)return;const el=[...document.querySelectorAll('[data-fid]')].find(x=>x.dataset.fid===f.id);if(el){el.focus();try{if(f.s!=null)el.setSelectionRange(f.s,f.e)}catch{}}}
+
+// ---- events from the exe ----
+let ES=null;
+function connectEvents(){
+ if(ES)return;
+ const es=ES=new EventSource('/api/events?t='+encodeURIComponent(TOKEN));
+ es.addEventListener('job',ev=>onJob(JSON.parse(ev.data)));
+ es.addEventListener('changed',()=>refresh());
+ es.onopen=()=>setLost(false);
+ es.onerror=()=>{refresh()};}
+function onJob(j){if(!S)return;const was=busy();S.busy=j;if(was!==!!j)render();else renderJob();if(ui.dlgUpdate)ui.dlgUpdate()}
+
+// ---- dialogs ----
+function openDialog(title,body,onUpdate){
+ const d=$('#dlg');ui.dlgUpdate=onUpdate||null;
+ put(d,h('div',{class:'dhead'},h('h2',{id:'dtitle'},title),h('button',{class:'small','aria-label':'Close',onclick:closeDialog},'Close')),h('div',{class:'dbody'},body));
+ if(!d.open)d.showModal();dlgFocus()}
+function dlgFocus(){const first=$('#dlg .dbody input:not(:disabled),#dlg .dbody button:not(:disabled),#dlg .dbody textarea');if(first)first.focus()}
+function closeDialog(){const d=$('#dlg');if(d.open)d.close()}
+$('#dlg').addEventListener('close',()=>{ui.dlgUpdate=null});
+$('#dlg').addEventListener('click',e=>{if(e.target===e.currentTarget)closeDialog()});
+const errBox=()=>h('p',{class:'errmsg',role:'alert',hidden:true});
+const showErr=(el,t)=>{el.textContent=t;el.hidden=!t};
+
+// ---- header ----
+function renderHeader(){
+ const R=S.report,g=S.game;
+ const gpu=R&&R.gpu?R.gpu+(R.gpuVram?' ('+sz(R.gpuVram)+')':''):null;
+ put($('#hdr'),h('div',{class:'hdr'},
+  h('h1',null,h('b',null,'VRAM '),'RipperDoc',h('small',null,'v'+S.version)),
+  h('div',{class:'meta'},
+   h('div',null,h('span',{class:'k'},'Game'),g.found?h('span',{class:'path mono'},g.path):h('span',{class:'warn'},'not found'),h('button',{class:'small',onclick:openGame},g.found?'Change':'Set folder')),
+   (gpu||(R&&R.settings))?h('div',null,h('span',{class:'k'},'GPU'),h('span',null,[gpu,R.settings].filter(Boolean).join('  ·  '))):null)));}
+
+// ---- notes (errors and results) ----
+function renderNotes(){
+ put($('#msgs'),...ui.notes.map((n,i)=>h('div',{class:'msg '+n.kind,role:n.kind==='err'?'alert':'status'},
+  h('div',{class:'body'},n.text,n.extra||null),
+  h('button',{class:'small','aria-label':'Dismiss',onclick:()=>{ui.notes.splice(i,1);renderNotes()}},'Dismiss'))));}
+
+// ---- job progress ----
+const JOBNAME={scan:'Scanning your mods',fix:'Building the budget fix',live:'Measuring VRAM'};
+const JOBKEEP={scan:'Please keep this window open. Big mod lists can take a few minutes. Nothing in your game is changed.',fix:'Please keep this window open. This writes one new file; your mods are not changed.',live:'Measuring goes on until you press Stop.'};
+function jobCard(j){
+ const pct=j.total>0?Math.min(100,j.done/j.total*100):0;
+ return h('div',{class:'panel job',role:'status'},
+  h('div',{class:'top'},h('span',{class:'what'},h('span',{class:'spin'}),JOBNAME[j.kind]||'Working'),
+   h('span',{class:'note'},[j.total>0?j.done.toLocaleString()+' / '+j.total.toLocaleString():'',j.etaSeconds!=null?fmtLeft(j.etaSeconds)+' left':'',h('span',{id:'elapsed'},'running for '+fmtClock((Date.now()-Date.parse(j.startedAt))/1000))].filter(Boolean).flatMap((x,i)=>i?['  ·  ',x]:[x]))),
+  p('',j.message),
+  h('div',{class:'bar'+(j.total>0?'':' ind'),role:'progressbar','aria-valuemin':0,'aria-valuemax':100,'aria-valuenow':j.total>0?Math.round(pct):null},h('i',{style:j.total>0?'width:'+pct+'%':null})),
+  h('p',{class:'keep'},JOBKEEP[j.kind]||''),
+  j.kind==='live'?h('button',{onclick:openMeasure},'Show live numbers'):null);}
+function resultCard(L){
+ const d=L.details||{},fix=L.kind==='fix';
+ return h('div',{class:'msg '+(L.ok?'ok':'err'),role:L.ok?'status':'alert'},h('div',{class:'body'},
+  h('b',null,L.message),
+  L.ok&&fix&&d.nextSteps&&d.nextSteps.length?[h('p',{style:'margin:8px 0 0'},'What to do next:'),h('ol',null,d.nextSteps.map(s=>h('li',null,s)))]:null,
+  L.ok&&L.kind==='live'&&d.compare?p('',d.compare):null,
+  L.ok&&fix?h('div',{class:'row',style:'margin-top:8px'},h('button',{class:'small',onclick:()=>openThing('fix')},'Show the file'),d.skipped?h('button',{class:'small',onclick:()=>openThing('fixlog')},'Open the log'):null):null),
+  h('button',{class:'small',onclick:()=>{ui.dismissed=L.finishedAt;renderJob()}},'Dismiss'));}
+function renderJob(){
+ const box=$('#jobbox'),j=S.busy,L=S.lastJob;put(box,);
+ if(j)box.append(jobCard(j));
+ else if(L&&L.kind!=='undo'&&ui.dismissed!==L.finishedAt)box.append(resultCard(L));}
+setInterval(()=>{const e=$('#elapsed');if(e&&S&&S.busy)e.textContent='running for '+fmtClock((Date.now()-Date.parse(S.busy.startedAt))/1000)},1000);
+
+// ---- actions ----
+function openThing(what){return act('POST','/api/open',{what})}
+async function doScan(){ui.dismissed=null;if(await act('POST','/api/scan',{}))await refresh()}
+async function doUndo(){ui.undo=false;const r=await act('POST','/api/undo',{});renderActions();if(!r)return;
+ notify('ok',r.message||'The budget fix was removed.',S.report?h('span',null,' ',h('button',{class:'link',onclick:doScan},'Scan again'),' to refresh the numbers.'):null);await refresh()}
+function renderActions(){
+ const box=$('#actions'),R=S.report,bz=busy(),why=bz?'Wait until the current task has finished.':null,noRep=!R?'Scan your mods first.':null;
+ const L=S.live||{},liveBusy=bz&&S.busy.kind==='live';
+ const btn=(txt,fn,dis,tip,cls)=>h('button',{class:cls||'',onclick:fn,disabled:!!dis,title:dis?tip:null},txt);
+ put(box,h('div',{class:'actions'},
+  (R||bz)?btn('Scan my mods',doScan,bz,why):null,
+  btn('Apply budget fix...',openFix,bz||!R||!R.mods.length,why||noRep||'No mods to fix.',R&&R.budget.current>R.budget.budget&&!R.budgetArchive?'primary':''),
+  btn('Undo budget fix',()=>{ui.undo=true;renderActions()},bz||!(S.fix&&S.fix.found),why||'There is no budget fix to remove.'),
+  btn('Measure VRAM...',openMeasure,(bz&&!liveBusy)||(!L.available&&!liveBusy),bz&&!liveBusy?why:(L.why||'Not available here.')),
+  h('span',{class:'sp'}),
+  btn('Open report file',()=>openThing('report'),!R,noRep,'small'),
+  btn('Open tool folder',()=>openThing('folder'),false,'','small')),
+  bz?p('note','Some buttons are grey while a task is running.'):null,
+  ui.undo?h('div',{class:'confirm',role:'alertdialog','aria-label':'Remove the budget fix'},b('Remove the budget fix?'),' Your mods stay as they are.',h('button',{class:'primary small',onclick:doUndo},'Yes, remove it'),h('button',{class:'small',onclick:()=>{ui.undo=false;renderActions()}},'Cancel')):null);}
+
+// ---- game folder ----
+function gameForm(onDone){
+ const err=errBox(),inp=h('input',{type:'text','data-fid':'game','aria-label':'Cyberpunk 2077 folder',placeholder:wine()?'Paste your Cyberpunk 2077 folder here':'Paste your Cyberpunk 2077 folder here',value:(S.game&&S.game.path)||''});
+ const go=h('button',{class:'primary'},'Use this folder');
+ const save=async()=>{showErr(err,'');go.disabled=true;try{S=await api('POST','/api/game',{path:inp.value.trim()});render();onDone&&onDone()}catch(e){showErr(err,e.message)}go.disabled=false};
+ go.addEventListener('click',save);inp.addEventListener('keydown',e=>{if(e.key==='Enter')save()});
+ return h('div',null,p('note',wine()?'The folder that contains the "bin" and "archive" folders.':'Open your game folder in Explorer, click the address bar, copy it and paste it here. The game\'s exe or any folder inside the game also works.'),
+  h('div',{class:'row'},inp,go),err);}
+function openGame(){openDialog('Where is Cyberpunk 2077?',gameForm(closeDialog))}
+
+// ---- views ----
+function viewFirst(){
+ return h('div',{class:'panel hero'},h('h2',null,'Let\'s see what your mods cost your graphics card'),
+  p('','VRAM RipperDoc looks at every mod you have installed and shows which ones use up the memory of your graphics card (VRAM). It changes nothing in your game.'),
+  p('note','Big mod lists can take a few minutes. A progress bar shows how far it is.'),
+  h('button',{class:'primary big',onclick:doScan,disabled:busy()},'Scan my mods'));}
+function viewNoGame(){return h('div',{class:'panel'},h('h2',null,'I can\'t find Cyberpunk 2077'),gameForm())}
+function viewNoMods(){
+ const M=S.mo2||{},err=errBox(),inp=h('input',{type:'text','data-fid':'mo2','aria-label':'Mod Organizer 2 folder',placeholder:'The folder that contains ModOrganizer.ini'});
+ const use=async path=>{showErr(err,'');try{S=await api('POST','/api/mo2',{path});render();await doScan()}catch(e){showErr(err,e.message)}};
+ if(M.underMo2)return h('div',{class:'panel'},h('h2',null,'No mods found'),p('','The scan did not find any .archive mods. If you have mods installed, check that they are enabled in Mod Organizer 2, then scan again.'),h('button',{class:'primary',onclick:doScan,disabled:busy()},'Scan again'));
+ return h('div',{class:'panel'},h('h2',null,'No mods found in the game folder'),
+  p('','Mod Organizer 2 keeps your mods in its own folder, outside the game folder. If you use it, tell me where it is and I will scan again.'),
+  (M.detected||[]).length?[h('p',null,b('Found on this computer:')),h('div',{class:'row',style:'margin-bottom:10px'},M.detected.map(d=>h('button',{class:'primary',onclick:()=>use(d),disabled:busy()},'Use '+d)))]:null,
+  h('p',null,b('Another folder:'),' the folder that contains ModOrganizer.ini'),
+  h('div',{class:'row'},inp,h('button',{onclick:()=>use(inp.value.trim()),disabled:busy()},'Use this folder')),err,
+  p('note',{style:'margin-top:12px'},'No Mod Organizer 2? Then you simply have no .archive mods yet.'),
+  h('button',{onclick:doScan,disabled:busy()},'Scan again'));}
+
+function cards(R){
+ const flagged=sum(R.mods,'flagged'),dead=sum(R.mods,'shadowedDisk'),miss=sum(R.mods,'missing');
+ const c=(k,v,s,cls)=>h('div',{class:'card'},h('div',{class:'k'},k),h('div',{class:'v '+(cls||'')},v),s?h('div',{class:'s'},s):null);
+ return h('div',{class:'cards'},c('Extra VRAM in normal play',sz(R.alwaysDelta)),c('New items (only when used)',sz(R.whenUsedDelta)),
+  c('GPU',R.gpu?sz(R.gpuVram):'unknown',R.gpu),c('Room for mods (normal play)',sz(R.budget.budget)),
+  c('Flagged files',flagged.toLocaleString()),c('Missing references',miss.toLocaleString(),null,miss?'hot':''),
+  c('Dead weight (never loads)',sz(dead)),c('Other data (system RAM, not VRAM)',sz(R.ramBytes||0)));}
+
+function problems(R){
+ const li=[],F=R.budgetFix;
+ for(const m of R.mods)if(m.error)li.push(h('li',null,b('Broken archive: '),h('span',{class:'mono'},m.name),p('note','The game can\'t read it ('+m.error+'). Reinstall or remove this mod.')));
+ for(const m of R.mods)if(m.missing>0){const names=[...new Set(m.assets.flatMap(a=>a.missing||[]))];
+  li.push(h('li',null,b('Missing files: '),h('span',{class:'mono'},m.name),' needs '+m.missing+' file(s) that are not installed',
+   names.length?h('div',{class:'note'},names.slice(0,6).map(n=>h('code',{style:'margin-right:8px'},n)),names.length>6?'and '+(names.length-6)+' more':null):null,
+   p('note','Usually a requirement of this mod is missing: check its mod page.')));}
+ if(F&&F.stale)li.push(h('li',null,b('The budget fix is out of date: '),F.why,p('note','It still shows old copies of those textures. Rebuild it, or remove it.'),
+  h('div',{class:'row'},h('button',{class:'primary small',onclick:openFix,disabled:busy()},'Rebuild the budget fix...'),h('button',{class:'small',onclick:()=>{ui.undo=true;renderActions();window.scrollTo(0,0)}},'Undo budget fix')),
+  (F.changed.length||F.removed.length)?h('details',null,h('summary',{class:'note'},'Which textures'),h('pre',{class:'mono note'},[...F.changed.map(x=>'updated since: '+x),...F.removed.map(x=>'mod removed: '+x)].slice(0,50).join('\n'))):null));
+ else if(F&&!F.manifest)li.push(h('li',null,b('Old budget fix: '),'it was made by v0.3.1 or older, which can\'t tell whether your mods changed since. If you updated texture mods, apply the fix again.'));
+ if(R.oodle===false)li.push(h('li',null,b('Texture sizes are estimates: '),'the game\'s decompression library was not found, so only file sizes are known.'));
+ return li.length?h('div',{class:'panel',style:'border-color:var(--hot)'},h('h2',null,'Problems ('+li.length+')'),h('ul',{class:'probs'},li)):null;}
+
+function budgetPanel(R){
+ const B=R.budget,over=B.current>B.budget,steps=B.steps.filter(s=>s.always).length,k=[h('h2',null,'Room for your mods')];
+ if(R.budgetArchive)k.push(p('ok','The budget fix is active (',h('code',null,R.budgetArchive),'). "Undo budget fix" removes it.'));
+ if(!over)k.push(p('ok','During normal play your mods add about ',b(sz(B.current)),' on top of the game itself. At your settings your card has room for '+sz(B.budget)+' of that, so nothing needs fixing.'));
+ else if(R.budgetArchive)k.push(p('','Without the fix your mods would add about '+sz(B.current)+' on top of the game during normal play, '+sz(B.current-B.budget)+' more than the '+sz(B.budget)+' of room your card has. The fix brings this to about ',b(sz(B.afterPlan)),B.afterPlan<=B.budget?', which fits.':'; to go lower, remove or swap the heaviest mod below.'));
+ else{k.push(p('warn','During normal play your mods add about ',b(sz(B.current)),' on top of the game itself, but at your settings your card only has room for '+sz(B.budget)+': '+sz(B.current-B.budget)+' too much.'));
+  k.push(B.afterPlan<=B.budget?p('','Halving '+steps+' texture(s) fixes it. It adds one extra file and never changes your mods.'):p('','Halving the biggest textures gets you to '+sz(B.afterPlan)+'. To go lower, remove or swap the heaviest mod in the table below.'));
+  k.push(h('button',{class:'primary',onclick:openFix,disabled:busy()},'Apply budget fix...'));}
+ if(over&&B.tips)k.push(p('',{style:'margin-top:10px'},'Lower settings also give mods more room (estimates): '+B.tips+'.'));
+ k.push(p('note',{style:'margin-top:10px'},'New items add up to '+sz(B.whenUsed)+' if every one of them were used at once, which never happens, so they don\'t count against this room. The budget fix can also shrink their big textures to 2K or 1K if you choose so.'));
+ if(B.steps.length)k.push(h('details',null,h('summary',{class:'note'},'Show the '+B.steps.length+' texture(s) the fix would halve'),h('table',null,h('tr',null,['Mod','File','Type'].map(t=>h('th',{class:'l'},t)),['Now','After','Saves'].map(t=>h('th',null,t))),
+  B.steps.slice(0,60).map(s=>h('tr',null,h('td',{class:'l'},s.mod),h('td',{class:'l name'},s.asset),h('td',{class:'l'},s.always?'normal play':'new item'),h('td',null,s.from+'px'),h('td',null,s.to+'px'),h('td',null,sz(s.saves))))),B.steps.length>60?p('note','+'+(B.steps.length-60)+' more in the report file'):null));
+ k.push(p('note',{style:'margin-top:8px'},'How the room for mods is worked out: '+B.why+'.'));
+ return h('div',{class:'panel'},k);}
+
+// ---- mods table ----
+function groups(R){const g=new Map();
+ for(const m of R.mods){const k=keyOf(m);
+  if(!g.has(k))g.set(k,{name:k,package:m.package,nexusId:m.nexusId,manager:m.manager,priority:m.priority,source:m.source,assets:[],archives:[],disk:0,delta:0,always:0,whenUsed:0,textures:0,meshes:0,tris:0,overrides:0,shadowed:0,missing:0,flagged:0,ram:0});
+  const x=g.get(k);for(const f of['disk','delta','always','whenUsed','textures','meshes','tris','overrides','shadowed','missing','flagged','ram'])x[f]+=m[f]||0;
+  x.assets.push(...m.assets);x.archives.push(m.name);if(m.error)x.error=m.error}
+ for(const x of g.values())x.assets.sort((a,c)=>Math.abs(c.delta)-Math.abs(a.delta));return[...g.values()]}
+const COLS=[['keep','Keep sharp','l'],['priority','#','l'],['name','Mod','l'],['always','Normal play'],['whenUsed','+ When used'],['textures','Tex'],['meshes','Mesh'],['tris','Tris LOD0','opt2'],['overrides','Overrides','opt2'],['shadowed','Never loads'],['missing','Missing'],['flagged','Flags']];
+async function toggleSharp(key,on){
+ const set=new Set(S.keepSharp);on?set.add(key):set.delete(key);
+ try{S=await api('POST','/api/keep-sharp',{mods:[...set]});render()}catch(e){notify('err',e.message);render()}}
+function renderTable(){
+ const R=S.report,wrap=$('#tblwrap'),fs=focusSave();if(!wrap)return;
+ const q=ui.q.toLowerCase(),list=ui.grp?groups(R):R.mods,max=Math.max(1,...list.map(m=>m.always)),sk=new Set(S.keepSharp);
+ const rows=list.filter(m=>!q||m.name.toLowerCase().includes(q)||(m.package||'').toLowerCase().includes(q)||m.assets.some(a=>a.name.toLowerCase().includes(q)))
+  .sort((a,c)=>{const k=ui.sortK,x=k==='name'?a.name.toLowerCase():a[k],y=k==='name'?c.name.toLowerCase():c[k];return((x>y?1:x<y?-1:0)*ui.sortD)||(c.delta-a.delta)});
+ const head=h('tr',null,COLS.map(([k,t,c])=>h('th',{class:c||'','aria-sort':ui.sortK===k?(ui.sortD<0?'descending':'ascending'):null},k==='keep'?t:h('button',{onclick:()=>{ui.sortD=ui.sortK===k?-ui.sortD:(k==='name'||k==='priority'?1:-1);ui.sortK=k;renderTable()}},t+(ui.sortK===k?(ui.sortD<0?' \u25BE':' \u25B4'):'')))));
+ const body=[];
+ for(const m of rows){const key=keyOf(m),isOpen=ui.open.has(m.name);
+  body.push(h('tr',{class:'mod'},
+   h('td',{class:'l'},h('input',{type:'checkbox','data-fid':'ks:'+key,checked:sk.has(key),'aria-label':'Keep '+key+' sharp (never shrink it)',title:'Keep sharp: the budget fix never shrinks "'+key+'"',onchange:e=>toggleSharp(key,e.target.checked)})),
+   h('td',{class:'l num'},m.priority),
+   h('td',{class:'l'},h('button',{class:'modname','data-fid':'open:'+m.name,'aria-expanded':String(isOpen),onclick:()=>{isOpen?ui.open.delete(m.name):ui.open.add(m.name);renderTable()}},(isOpen?'\u25BE ':'\u25B8 ')+m.name),
+    m.error?h('span',{class:'tag',style:'margin-left:6px'},m.error):null,
+    h('div',{class:'note'},[m.source,sz(m.disk)+' on disk',m.archives?m.archives.length+' archive(s)':(m.package&&m.package!==m.name&&!(m.source||'').includes(m.package)?(m.manager||'')+': '+m.package:null),m.ram>=50*2**20?sz(m.ram)+' other data (system RAM, not VRAM)':null].filter(Boolean).join(' \u00B7 '))),
+   h('td',{class:'num big '+(m.always<0?'neg':m.always>2**30?'hot':'')},sz(m.always),h('div',{class:'mb'},h('i',{style:'width:'+Math.max(0,m.always)/max*100+'%'}))),
+   h('td',{class:'num big'},sz(m.whenUsed)),
+   h('td',null,m.textures),h('td',null,m.meshes),h('td',{class:'opt2'},m.tris.toLocaleString()),h('td',{class:'opt2'},m.overrides),h('td',null,m.shadowed),
+   h('td',{class:m.missing?'hot':''},m.missing),h('td',{class:m.flagged?'hot':''},m.flagged)));
+  if(isOpen)body.push(detailRow(m))}
+ if(!rows.length)body.push(h('tr',null,h('td',{class:'l',colspan:99},R.mods.length?'No mods match the filter.':'No .archive mods found.')));
+ put(wrap,h('table',null,head,body));focusRestore(fs);}
+function detailRow(m){
+ const info=[ui.grp?m.archives.join(', '):m.file,m.manager&&!ui.grp?'Installed with '+m.manager:null,m.community,m.tris?m.tris.toLocaleString()+' triangles (LOD0)':null,m.overrides?m.overrides+' file(s) replace game files':null].filter(Boolean);
+ const link=Number.isInteger(m.nexusId)?h('a',{href:'https://www.nexusmods.com/cyberpunk2077/mods/'+m.nexusId,target:'_blank',rel:'noopener'},'Nexus #'+m.nexusId):null;
+ return h('tr',{class:'detail'},h('td',{colspan:99},
+  h('div',{class:'note'},info.join(' \u00B7 '),info.length&&link?' \u00B7 ':'',link),
+  m.ram>0?p('note','Other data: '+sz(m.ram)+' that loads into system RAM, so it is not counted as VRAM.'):null,
+  m.assets.length?[h('table',null,h('tr',null,h('th',{class:'l'},'File'),h('th',{class:'l'},'Kind'),h('th',{class:'l'},'Size'),h('th',null,'GPU'),h('th',null,'+VRAM'),h('th',{class:'l'},'Notes')),
+   m.assets.slice(0,60).map(a=>h('tr',null,h('td',{class:'l name'},a.name),h('td',{class:'l'},a.class||a.kind),
+    h('td',{class:'l num'},a.kind==='Texture'?a.w+'\u00D7'+a.h+' '+a.mips+'mip '+(a.fmt||'').replace('TCM_',''):a.kind==='Mesh'?a.tris.toLocaleString()+' tris \u00B7 '+a.lods+' LOD':''),
+    h('td',{class:'num'},sz(a.gpu)),h('td',{class:'num '+(a.delta<0?'neg':'')},sz(a.delta)),
+    h('td',{class:'l'},a.gpu===0&&a.ram>0?h('span',{class:'tag dead'},sz(a.ram)+' in system RAM, not VRAM'):null,
+     h('span',{class:'tag dead'},a.override?'replaces a game file':a.always?'used by a replaced file':'new item'),
+     (a.flags||[]).map(f=>h('span',{class:'tag '+(a.shadowedBy?'dead':'')},f)))))),
+   m.assets.length>60?p('note',(m.assets.length-60)+' more in the report file'):null]:p('note','No details to show.')));}
+
+async function copySummary(btn){
+ const t=S.report.summary;
+ try{await navigator.clipboard.writeText(t);btn.textContent='Copied';setTimeout(()=>{btn.textContent='Copy summary for a support post'},2000)}
+ catch{const ta=h('textarea',{readonly:true,'aria-label':'Summary'},t);openDialog('Copy this summary',h('div',null,ta,h('div',{class:'dbtns'},h('button',{onclick:closeDialog},'Close'))));ta.focus();ta.select()}}
+function tablePanel(R){
+ const q=h('input',{type:'text','data-fid':'q','aria-label':'Filter mods or files',placeholder:'Filter mods or files...',value:ui.q,oninput:e=>{ui.q=e.target.value;renderTable()}});
+ const cb=h('button',{onclick:()=>copySummary(cb)},'Copy summary for a support post');
+ return h('div',{class:'panel'},h('h2',null,'Your mods, heaviest first'),
+  p('note','Tick ',b('Keep sharp'),' for mods whose textures you never want shrunk: the budget fix leaves those alone.'),
+  h('div',{class:'tools'},q,h('label',null,h('input',{type:'checkbox','data-fid':'grp',checked:ui.grp,onchange:e=>{ui.grp=e.target.checked;ui.open.clear();renderTable()}}),'Group by installed mod'),cb),
+  h('div',{id:'tblwrap',class:'tblwrap'}),
+  h('details',null,h('summary',{class:'note'},'What do these columns mean?'),
+   p('note',b('Normal play'),' = extra VRAM because the mod replaces game files (loaded whenever those things are on screen). ',b('When used'),' = new clothing, cars, weapons or props, which only take VRAM while you wear, drive or spawn them. When used comes on top of Normal play. A negative Normal play means the mod makes the game lighter than vanilla. Only what goes to the graphics card counts (textures, models, morph targets, masks); animations and world data load into system RAM, so they\'re shown as other data. Both are estimates from the files; use Measure VRAM for real numbers. Click a mod to see its heaviest files.')));}
+
+function viewReport(R){
+ const k=[h('p',{class:'note'},R.mods.length+' mod archive(s) \u00B7 scanned '+R.generated),cards(R),problems(R),budgetPanel(R)];
+ if((R.history||[]).length||(R.managerNotes||[]).length)k.push(h('details',{class:'panel'},h('summary',null,'Changes and sources'),h('pre',{class:'mono note'},[...R.managerNotes,...R.history].join('\n'))));
+ k.push(tablePanel(R));return k}
+function renderView(){
+ const v=$('#view'),R=S.report;let n;
+ if(!S.game.found)n=viewNoGame();
+ else if(!R)n=busy()?null:viewFirst();
+ else if(!R.mods.length)n=viewNoMods();
+ else n=viewReport(R);
+ put(v,...[n].flat().filter(Boolean));
+ renderTable()}
+function render(){
+ const f=focusSave();
+ renderHeader();renderNotes();renderJob();
+ put($('#actions'),);if(S.game.found)renderActions();
+ renderView();focusRestore(f);if(ui.dlgUpdate)ui.dlgUpdate()}
+
+// ---- apply budget fix ----
+async function openFix(){
+ if(busy())return;
+ const o={normal:true,newItems:'none'},err=errBox(),body=h('div',null,p('note','Working out what the fix would do...'));
+ openDialog('Apply budget fix',h('div',null,body,err));
+ let plan;try{plan=await api('POST','/api/plan',o)}catch(e){showErr(err,e.message);return}
+ const canNormal=plan.current>plan.budget&&plan.normal.count>0;o.normal=canNormal;
+ const normalWhy=canNormal?'':plan.current<=plan.budget?'Your mods already fit in your card\'s room, so nothing needs halving.':'No normal-play texture is big enough to halve.';
+ const sumBox=h('div',{class:'sum','aria-live':'polite'}),apply=h('button',{class:'primary'},'Apply');
+ let seq=0;
+ const fill=pl=>{const c=pl.chosen,k=pl.keptSharp;put(sumBox,c.count>0?[b('This will shrink '+c.count.toLocaleString()+' texture(s)'),', write a file of about '+sz(c.writeBytes)+' and take '+fmtLeft(c.seconds)+'. Saves about '+sz(c.saves)+' of VRAM.']:'Nothing chosen yet. Tick or choose an option above.',
+  k&&k.mods>0?h('div',{class:'note'},k.mods+' mod(s) you marked Keep sharp are left alone ('+k.textures+' textures).'):null);apply.disabled=!(c.count>0)};
+ const change=async()=>{const n=++seq;try{const pl=await api('POST','/api/plan',Object.assign({},o));if(n===seq){showErr(err,'');fill(pl)}}catch(e){showErr(err,e.message)}};
+ const ni=(v,label,x)=>h('label',{class:'opt'+(x.count?'':' off')},h('input',{type:'radio',name:'ni',value:v,checked:o.newItems===v,disabled:v!=='none'&&!x.count,onchange:()=>{o.newItems=v;change()}}),h('span',null,b(label),v==='none'?'The textures stay as the mod authors made them.':x.count?x.count.toLocaleString()+' texture(s), saves about '+sz(x.saves):'Nothing to shrink'));
+ put(body,
+  p('','This adds ',b('one new file'),' with smaller copies of the heaviest textures. ',b('Your mods are never changed.'),' "Undo budget fix" removes the file and everything is as it was before.'),
+  S.mo2&&S.mo2.instance?p('note','With Mod Organizer 2 it is saved as a mod named "VRAM RipperDoc Budget Fix"; after it is done you press F5 in MO2 and tick it.'):null,
+  h('label',{class:'opt'+(canNormal?'':' off')},h('input',{type:'checkbox',checked:canNormal,disabled:!canNormal,onchange:e=>{o.normal=e.target.checked;change()}}),h('span',null,b(canNormal?'Halve '+plan.normal.count.toLocaleString()+' textures so your mods fit: saves '+sz(plan.normal.saves):'Normal play'),canNormal?'During normal play they then use about '+sz(plan.afterPlan)+(plan.afterPlan<=plan.budget?', which fits.':', still more than the room you have.'):normalWhy)),
+  h('fieldset',{style:'margin-top:12px'},h('legend',null,'New clothing, cars and props'),
+   p('note','These only use VRAM while you wear, drive or spawn them. 1K looks softer up close, but that is hard to see on small screens like the Steam Deck\'s.'),
+   ni('none','Leave them as they are',{count:1,saves:0}),ni('2k','Shrink to 2K',plan.newItems2k),ni('1k','Shrink to 1K',plan.newItems1k)),
+  sumBox,h('div',{class:'dbtns'},h('button',{onclick:closeDialog},'Cancel'),apply));
+ apply.addEventListener('click',async()=>{apply.disabled=true;try{await api('POST','/api/fix',Object.assign({},o));closeDialog();ui.dismissed=null;await refresh()}catch(e){showErr(err,e.message);apply.disabled=false}});
+ fill(plan);dlgFocus();if(!canNormal)change();}
+
+// ---- measure VRAM ----
+function openMeasure(){const body=h('div');openDialog('Measure VRAM',body,()=>fillMeasure(body));fillMeasure(body);dlgFocus()}
+function fillMeasure(body){
+ const f=focusSave(),L=S.live||{},j=S.busy&&S.busy.kind==='live'?S.busy:null,k=[];
+ k.push(p('note','Records how much video memory the game really uses while you play. Measure once as "before", apply the budget fix, then again as "after" in the same save.'));
+ if(!L.available)k.push(p('warn',L.why||'Measuring is not available here.'));
+ else if(j)k.push(liveBox(j));
+ else if(S.busy)k.push(p('note','Wait until the current task has finished.'));
+ else{
+  const err=errBox();showErr(err,ui.liveErr);
+  if(ui.liveLabel==null)ui.liveLabel=(L.sessions||[]).length?'after':'before';
+  const inp=h('input',{type:'text','data-fid':'label','aria-label':'Name for this measurement',maxlength:40,value:ui.liveLabel,oninput:e=>{ui.liveLabel=e.target.value}});
+  const start=async()=>{ui.liveErr='';try{await api('POST','/api/live/start',{label:inp.value.trim()||'measurement'});await refresh()}catch(e){ui.liveErr=e.message;fillMeasure(body)}};
+  inp.addEventListener('keydown',e=>{if(e.key==='Enter')start()});
+  k.push(h('label',null,b('Name this measurement')),h('div',{class:'row'},inp,h('button',{class:'small',onclick:()=>{inp.value=ui.liveLabel='before'}},'before'),h('button',{class:'small',onclick:()=>{inp.value=ui.liveLabel='after'}},'after'),h('button',{class:'primary',onclick:start},'Start')),err,p('note',{style:'margin-top:8px'},'After you press Start, launch the game and load a save.'));}
+ const last=S.lastJob;
+ if(!j&&last&&last.kind==='live')k.push(h('div',{class:'msg '+(last.ok?'ok':'err')},h('div',{class:'body'},b(last.message),last.details&&last.details.compare?p('',{style:'margin:6px 0 0'},last.details.compare):null)));
+ const ss=[...(L.sessions||[])].reverse();
+ if(ss.length)k.push(h('h3',null,'Saved measurements'),h('table',null,h('tr',null,h('th',{class:'l'},'Name'),h('th',{class:'l'},'When'),h('th',null,'Length'),h('th',null,'Peak'),h('th',null,'Steady')),
+  ss.map(s=>h('tr',null,h('td',{class:'l'},s.label||'?'),h('td',{class:'l'},fmtDate(s.start)),h('td',null,s.seconds!=null?fmtClock(s.seconds):'-'),h('td',null,s.peak!=null?sz(s.peak):'-'),h('td',null,s.steady!=null?sz(s.steady):'-')))));
+ put(body,...k);focusRestore(f)}
+function liveBox(j){
+ const lv=j.live;
+ if(j.phase==='waiting'||!lv)return h('div',null,h('p',null,h('span',{class:'spin'}),b('Start the game and load a save.')),p('note','Measuring begins by itself as soon as the game is running.'),h('div',{class:'bar ind'},h('i')),h('div',{class:'dbtns'},h('button',{onclick:stopLive},'Cancel')));
+ const st=(k,v)=>h('div',null,h('div',{class:'k'},k),h('div',{class:'v'},v));
+ return h('div',null,h('div',{class:'live'},h('div',{class:'big'},sz(lv.game)),st('Peak so far',sz(lv.peak)),st('Graphics card total',sz(lv.gpuTotal)),st('Elapsed',fmtClock(lv.seconds))),
+  p('note','Play normally for a few minutes, including busy places, then press Stop. Keep this window open.'),h('div',{class:'dbtns'},h('button',{class:'primary',onclick:stopLive},'Stop and save')));}
+async function stopLive(){try{await api('POST','/api/live/stop',{});await refresh()}catch(e){ui.liveErr=e.message;notify('err',e.message)}}
+
+// ---- start ----
+$('#retry').addEventListener('click',async()=>{await refresh();if(S&&!DEMO)connectEvents()});
+// A browser that was already running ignores the window size the exe asks for and opens the app window very wide on
+// big screens. App windows may resize themselves (ordinary tabs ignore this); once per window, so a size the player
+// picks afterwards is kept.
+function fitWindow(){
+ try{if(DEMO||sessionStorage.getItem('fit')||window.outerWidth<=1500)return;sessionStorage.setItem('fit','1');
+  const w=Math.min(1360,screen.availWidth),ht=Math.min(920,screen.availHeight);
+  window.resizeTo(w,ht);window.moveTo((screen.availLeft||0)+(screen.availWidth-w)/2,(screen.availTop||0)+(screen.availHeight-ht)/2)}catch{}}
+// Tells the exe the window is closing, so it stops within seconds. A reload says the same; reconnecting takes it back.
+window.addEventListener('pagehide',()=>{if(!DEMO)try{fetch('/api/bye',{method:'POST',keepalive:true,headers:{'X-RipperDoc-Token':TOKEN}}).catch(()=>{})}catch{}});
+async function start(){
+ fitWindow();
+ await refresh();
+ if(S&&!DEMO)connectEvents();
+ const o=qs.get('open');
+ if(S&&o==='fix')openFix();else if(S&&o==='measure')openMeasure();else if(S&&o==='game')openGame();}
+
+// ==== Demo mode: only runs from file: or ?demo=<name>. Never used with the real exe. ====
+const Demo=!DEMO?null:(()=>{
+ const R0={"tool":"VRAM RipperDoc - Performance Optimizer","version":"0.4.0","generated":"2026-11-16 20:15","gameDir":"D:\\SteamLibrary\\steamapps\\common\\Cyberpunk 2077","oodle":true,"vanillaFiles":553470,"gpu":"NVIDIA GeForce RTX 4090","gpuVram":25757220864,"settings":"5120x1440, High textures, ray tracing","totalDelta":228065760,"ramBytes":860339,"alwaysDelta":0,"whenUsedDelta":228065760,"summary":"**VRAM RipperDoc v0.4.0** \u00b7 10 archive mods \u00b7 **0 B** extra in normal play \u00b7 217.5 MB in new items (only when used)\nGPU: NVIDIA GeForce RTX 4090 (23.99 GB) \u00b7 5120x1440, High textures, ray tracing\nRoom for mods on top of the game: 20.5 MB (4090 has 24 GB; the game, Windows and your settings use the rest) \u2192 fits\n\n| Mod | Normal play | When used | Tex | Mesh | Flags |\n|---|---:|---:|---:|---:|---:|\n| HeavyOutfits | 0 B | 165.3 MB | 8 | 0 | 8 |\n| HugeTextures | 0 B | 45.3 MB | 6 | 0 | 6 |\n| NewOutfit | 0 B | 4.2 MB | 4 | 0 | 4 |\n| Better Skies | 0 B | 2.7 MB | 2 | 0 | 2 |\n| #BrokenRef | 0 B | 0 B | 0 | 1 | 1 |\n| HD Reworked Project (2 archives) | 0 B | 0 B | 17 | 0 | 14 |\n| Manual Install | 0 B | 0 B | 3 | 10 | 12 |\n| TestRedmod | 0 B | 0 B | 0 | 2 | 0 |\n\n**Broken archives:** `zz_Broken`\n\n**Missing references (requirement not installed?):** `#BrokenRef` (1)\n","history":[],"managerNotes":["Vortex: matched 3 archive(s) to installed mods.","MO2 (_mo2, profile Default): 1 archive(s) from 1 enabled mod(s)."],"budget":{"budget":21474836,"why":"4090 has 24 GB; the game, Windows and your settings use the rest","tips":"Texture Quality Medium +0.8 GB, ray tracing off +1.0 GB","current":0,"afterPlan":0,"whenUsed":228065760,"includeNew":false,"newItemsMax":2048,"newItemSaves":0,"steps":[]},"mods":[{"name":"#BrokenRef","file":"","source":"archive/pc/mod","priority":0,"disk":57344,"delta":0,"always":0,"whenUsed":0,"texDelta":0,"meshDelta":0,"textures":0,"meshes":1,"tris":1444,"overrides":1,"shadowed":0,"shadowedDisk":0,"missing":1,"flagged":1,"ram":0,"assets":[{"name":"0x000574868C15789D","kind":"Mesh","class":"CMesh","gpu":100864,"delta":0,"ram":0,"tris":1444,"lods":1,"override":true,"always":true,"missing":["engine\\materials\\metal_baseqremt"],"flags":["references 1 missing file(s): engine\\materials\\metal_baseqremt"]}]},{"name":"#PriorityPatch","file":"","source":"archive/pc/mod","package":"HD Reworked Project","nexusId":7652,"manager":"Vortex","priority":1,"disk":2469888,"delta":0,"always":0,"whenUsed":0,"texDelta":0,"meshDelta":0,"textures":3,"meshes":0,"tris":0,"overrides":3,"shadowed":0,"shadowedDisk":0,"missing":0,"flagged":3,"ram":0,"assets":[{"name":"0x00B25AB38112A2FD","kind":"Texture","class":"CBitmapTexture","gpu":349552,"delta":0,"ram":0,"w":512,"h":512,"mips":10,"fmt":"TCM_Normalmap","override":true,"always":true,"flags":["identical to vanilla (does nothing)"]},{"name":"0x00CAAED6D95639A3","kind":"Texture","class":"CBitmapTexture","gpu":1398128,"delta":0,"ram":0,"w":1024,"h":1024,"mips":11,"fmt":"TCM_Normalmap","override":true,"always":true,"flags":["identical to vanilla (does nothing)"]},{"name":"0x010D32EC104B79A4","kind":"Texture","class":"CBitmapTexture","gpu":5592432,"delta":0,"ram":0,"w":2048,"h":2048,"mips":12,"fmt":"TCM_QualityColor","override":true,"always":true,"flags":["identical to vanilla (does nothing)"]}]},{"name":"BetterSkies","file":"","source":"MO2: Better Skies","package":"Better Skies","nexusId":9999,"manager":"MO2","priority":2,"disk":1028096,"delta":2796256,"always":0,"whenUsed":2796256,"texDelta":2796256,"meshDelta":0,"textures":2,"meshes":0,"tris":0,"overrides":0,"shadowed":0,"shadowedDisk":0,"missing":0,"flagged":2,"ram":0,"assets":[{"name":"0x05595740634DD97D","kind":"Texture","class":"CBitmapTexture","gpu":1398128,"delta":1398128,"ram":0,"w":1024,"h":1024,"mips":11,"fmt":"TCM_Normalmap","override":false,"always":false,"flags":["possibly unused: nothing references this new file"]},{"name":"0xCB2A2D42CBB1CF0F","kind":"Texture","class":"CBitmapTexture","gpu":1398128,"delta":1398128,"ram":0,"w":1024,"h":1024,"mips":11,"fmt":"TCM_QualityColor","override":false,"always":false,"flags":["possibly unused: nothing references this new file"]}]},{"name":"HD_Textures","file":"","source":"archive/pc/mod","package":"HD Reworked Project","nexusId":7652,"manager":"Vortex","priority":3,"disk":11821056,"delta":0,"always":0,"whenUsed":0,"texDelta":0,"meshDelta":0,"textures":14,"meshes":0,"tris":0,"overrides":14,"shadowed":3,"shadowedDisk":2462622,"missing":0,"flagged":11,"ram":0,"assets":[{"name":"0x01281373F11A8F94","kind":"Texture","class":"CBitmapTexture","gpu":22369648,"delta":0,"ram":0,"w":4096,"h":4096,"mips":13,"fmt":"TCM_QualityColor","override":true,"always":true,"flags":["4K texture","identical to vanilla (does nothing)"]},{"name":"0x0166861A832F8BF0","kind":"Texture","class":"CBitmapTexture","gpu":1398128,"delta":0,"ram":0,"w":1024,"h":1024,"mips":11,"fmt":"TCM_QualityColor","override":true,"always":true,"flags":["identical to vanilla (does nothing)","duplicate of 0xCB2A2D42CBB1CF0F in BetterSkies (1.3 MB paid twice if both load)"]},{"name":"0x01B618C3E298F1F3","kind":"Texture","class":"CBitmapTexture","gpu":1398128,"delta":0,"ram":0,"w":1024,"h":1024,"mips":11,"fmt":"TCM_Normalmap","override":true,"always":true,"flags":["identical to vanilla (does nothing)","duplicate of 0x05595740634DD97D in BetterSkies (1.3 MB paid twice if both load)"]},{"name":"0x00B25AB38112A2FD","kind":"Texture","class":"CBitmapTexture","gpu":349552,"delta":0,"ram":0,"w":512,"h":512,"mips":10,"fmt":"TCM_Normalmap","override":true,"always":false,"shadowedBy":"#PriorityPatch","flags":["never loads: #PriorityPatch wins this file"]}]},{"name":"HeavyOutfits","file":"","source":"archive/pc/mod","priority":4,"disk":18046976,"delta":173364752,"always":0,"whenUsed":173364752,"texDelta":173364752,"meshDelta":0,"textures":8,"meshes":0,"tris":0,"overrides":0,"shadowed":0,"shadowedDisk":0,"missing":0,"flagged":8,"ram":0,"assets":[{"name":"0x739B67C7D5AC9043","kind":"Texture","class":"CBitmapTexture","gpu":22369648,"delta":22369648,"ram":0,"w":4096,"h":4096,"mips":13,"fmt":"TCM_QualityColor","override":false,"always":false,"flags":["4K texture","duplicate of 0x01281373F11A8F94 in HD_Textures (21.3 MB paid twice if both load)","possibly unused: nothing references this new file"]},{"name":"0x5D800BAB3FD156FF","kind":"Texture","class":"CBitmapTexture","gpu":22369648,"delta":22369648,"ram":0,"w":4096,"h":4096,"mips":13,"fmt":"TCM_Normalmap","override":false,"always":false,"flags":["4K texture","possibly unused: nothing references this new file"]},{"name":"0x63AE9EBA82B41B50","kind":"Texture","class":"CBitmapTexture","gpu":22369648,"delta":22369648,"ram":0,"w":4096,"h":4096,"mips":13,"fmt":"TCM_QualityColor","override":false,"always":false,"flags":["4K texture","possibly unused: nothing references this new file"]},{"name":"0xBC5B1EBF29315746","kind":"Texture","class":"CBitmapTexture","gpu":22369648,"delta":22369648,"ram":0,"w":4096,"h":4096,"mips":13,"fmt":"TCM_QualityColor","override":false,"always":false,"flags":["4K texture","possibly unused: nothing references this new file"]}]},{"name":"HugeTextures","file":"","source":"archive/pc/mod","priority":5,"disk":8695808,"delta":47535592,"always":0,"whenUsed":47535592,"texDelta":47535592,"meshDelta":0,"textures":6,"meshes":0,"tris":0,"overrides":0,"shadowed":0,"shadowedDisk":0,"missing":0,"flagged":6,"ram":0,"assets":[{"name":"0xB3BCB7931F46FD3A","kind":"Texture","class":"CBitmapTexture","gpu":22369648,"delta":22369648,"ram":0,"w":4096,"h":4096,"mips":13,"fmt":"TCM_QualityColor","override":false,"always":false,"flags":["4K texture","duplicate of 0x01281373F11A8F94 in HD_Textures (21.3 MB paid twice if both load)","possibly unused: nothing references this new file"]},{"name":"0x53930C75A822DDF5","kind":"Texture","class":"CBitmapTexture","gpu":5592432,"delta":5592432,"ram":0,"w":2048,"h":2048,"mips":12,"fmt":"TCM_QualityColor","override":false,"always":false,"flags":["duplicate of 0x010D32EC104B79A4 in #PriorityPatch (5.3 MB paid twice if both load)","possibly unused: nothing references this new file"]},{"name":"0xF821709C1C6CEC67","kind":"Texture","class":"CBitmapTexture","gpu":5592432,"delta":5592432,"ram":0,"w":2048,"h":2048,"mips":12,"fmt":"TCM_QualityColor","override":false,"always":false,"flags":["duplicate of 0x021E8435882B514F in HD_Textures (5.3 MB paid twice if both load)","possibly unused: nothing references this new file"]},{"name":"0x5BE8F78E79814544","kind":"Texture","class":"CBitmapTexture","gpu":5592432,"delta":5592432,"ram":0,"w":2048,"h":2048,"mips":12,"fmt":"TCM_Normalmap","override":false,"always":false,"flags":["possibly unused: nothing references this new file"]}]},{"name":"MeshPack","file":"","source":"archive/pc/mod","package":"Manual Install","manager":"Vortex","priority":6,"disk":1482752,"delta":0,"always":0,"whenUsed":0,"texDelta":0,"meshDelta":0,"textures":3,"meshes":10,"tris":49209,"overrides":13,"shadowed":1,"shadowedDisk":51524,"missing":0,"flagged":12,"ram":860339,"assets":[{"name":"0x001E7651130D18EB","kind":"Mesh","class":"CMesh","gpu":539752,"delta":0,"ram":392508,"tris":10428,"lods":1,"override":true,"always":true,"flags":["identical to vanilla (does nothing)"]},{"name":"0x0007C9D521C843DD","kind":"Mesh","class":"CMesh","gpu":38256,"delta":0,"ram":265752,"tris":1256,"lods":1,"override":true,"always":true,"flags":["identical to vanilla (does nothing)"]},{"name":"0x0003097C6F1173F0","kind":"Mesh","class":"CMesh","gpu":72664,"delta":0,"ram":93098,"tris":1256,"lods":3,"override":true,"always":true,"flags":["identical to vanilla (does nothing)"]},{"name":"0x0002A04F05B267D6","kind":"Mesh","class":"CMesh","gpu":1570832,"delta":0,"ram":63662,"tris":23813,"lods":4,"override":true,"always":true,"flags":["identical to vanilla (does nothing)"]}]},{"name":"zz_Broken","file":"","source":"archive/pc/mod","priority":8,"disk":36,"error":"File too small to be an archive","delta":0,"always":0,"whenUsed":0,"texDelta":0,"meshDelta":0,"textures":0,"meshes":0,"tris":0,"overrides":0,"shadowed":0,"shadowedDisk":0,"missing":0,"flagged":0,"ram":0,"assets":[]}]},name=qs.get('demo')||'report',T=[],G=2**30;
+ const clone=o=>JSON.parse(JSON.stringify(o)),rep=()=>clone(R0);
+ const over=r=>{const a={HD_Textures:3.4*G,MeshPack:.9*G,HugeTextures:1.1*G};let t=0;
+  for(const m of r.mods)if(a[m.name]){m.always=m.delta=Math.round(a[m.name]);t+=m.always}
+  r.alwaysDelta=t;r.totalDelta=t+r.whenUsedDelta;r.budget.budget=Math.round(4.0*G);r.budget.current=t;r.budget.afterPlan=Math.round(3.7*G);
+  r.budget.tips='Texture Quality Medium +0.8 GB, frame generation off +0.5 GB';
+  r.budget.steps=[['HD_Textures','0x01F4A2C9',4096,2048,.31],['HD_Textures','0x02B77D10',4096,2048,.28],['MeshPack','0x07AA19E4',2048,1024,.09]].map(([mod,asset,from,to,s])=>({mod,asset,always:true,from,to,saves:Math.round(s*G)}));return r};
+ const S0={version:'0.5.0',platform:'windows',toolDir:'D:\\Tools\\VRAM RipperDoc',game:{path:R0.gameDir,found:true},mo2:{instance:null,detected:[],underMo2:false},busy:null,lastJob:null,report:rep(),fix:{path:null,found:false},keepSharp:[],live:{available:true,why:'',sessions:[]}};
+ const job=(kind,phase,message,done,total,eta)=>({kind,phase,message,done,total,startedAt:new Date(Date.now()-14000).toISOString(),etaSeconds:eta,canStop:kind==='live',live:null});
+ const st=S0;
+ if(name==='first'){st.report=null}
+ if(name==='overbudget')over(st.report);
+ if(name==='stale'){over(st.report);st.fix.found=true;st.report.budgetArchive='VRAM-RipperDoc-BudgetFix.archive';st.report.budgetFix={textures:212,manifest:true,stale:true,why:'2 texture(s) changed since it was made, 1 mod was removed',changed:['HD_Textures: 0x01F4A2C9'],removed:['OldSkin']}}
+ if(name==='nogame'){st.game={path:null,found:false}}
+ if(name==='nomods'){st.report.mods=[];st.mo2.detected=['C:\\Modding\\MO2']}
+ if(name==='scanning'){st.busy=job('scan','scanning','Scanning mods: 120 / 800',120,800,95);st.report=null}
+ if(name==='fixing'){over(st.report);st.busy=job('fix','shrinking','Shrinking textures: 300 / 852',300,852,60)}
+ if(name==='measuring'){st.busy=job('live','measuring','Measuring: the game is running',0,0,null);st.busy.live={seconds:42,game:6442450944,peak:6979321856,gpuTotal:9663676416};st.live.sessions=[{label:'before',startedAt:'2026-11-16T09:00:00Z',seconds:300,peak:7.9*G,steady:7.2*G}]}
+ if(qs.get('keep'))st.keepSharp=['HD Reworked Project'];
+ const emitJob=j=>{st.busy=j;onJob(clone(j))};
+ const run=(kind,phase,msg,total,secs,end)=>{let n=0;const id=setInterval(()=>{n++;if(n>=total){clearInterval(id);st.busy=null;end();refresh();return}
+   emitJob(job(kind,phase,msg+': '+n+' / '+total,n,total,(total-n)*secs))},500)};
+ const plan=o=>{const ov=name==='overbudget'||name==='stale'||name==='fixing',nc=ov?212:0,n2={count:640,saves:9*G},n1={count:1900,saves:11*G};
+  const x=o.newItems==='2k'?n2:o.newItems==='1k'?n1:{count:0,saves:0},c=(o.normal?nc:0)+x.count,k=st.keepSharp.length;
+  return{budget:st.report.budget.budget,current:st.report.budget.current,afterPlan:st.report.budget.afterPlan,fits:!ov,normal:{count:nc,saves:ov?1.9*G:0},newItems2k:n2,newItems1k:n1,chosen:{count:c,saves:(o.normal&&ov?1.9*G:0)+x.saves,writeBytes:c*2.8*2**20,seconds:c*.11,perMod:[]},keptSharp:{mods:k,textures:k*12}}};
+ const endScan=()=>{st.report=name==='nomods'&&!st.mo2.instance?(()=>{const r=rep();r.mods=[];return r})():rep();if(name==='overbudget'||name==='stale'||name==='fixing')over(st.report);st.lastJob={kind:'scan',ok:true,message:'Scan finished: '+st.report.mods.length+' mods in 2 seconds.',finishedAt:new Date().toISOString(),details:{mods:st.report.mods.length,seconds:2}}};
+ const endFix=()=>{st.fix.found=true;st.report.budgetArchive='VRAM-RipperDoc-BudgetFix.archive';st.lastJob={kind:'fix',ok:true,message:'Done: 852 textures halved.',finishedAt:new Date().toISOString(),details:{path:'x',textures:852,saved:10.9*G,skipped:3,mo2Mod:false,nextSteps:['Start the game as usual: the new file loads by itself.','If you use Mod Organizer 2, press F5 and tick "VRAM RipperDoc Budget Fix".']}}};
+ if(name==='scanning')setTimeout(()=>run('scan','scanning','Scanning mods',6,2,endScan),4000);
+ if(name==='fixing')setTimeout(()=>run('fix','shrinking','Shrinking textures',8,3,endFix),4000);
+ const route=(m,path,b)=>{
+  if(name==='closed')throw new Error('closed');
+  if(path==='/api/state')return clone(st);
+  if(path==='/api/scan'){run('scan','scanning','Scanning mods',6,2,endScan);emitJob(job('scan','scanning','Scanning mods',0,0,null));return{}}
+  if(path==='/api/game'){if(!/cyberpunk/i.test(b.path||''))throw new Error('That folder does not look like Cyberpunk 2077. Look for the folder with "bin" and "archive" inside.');st.game={path:b.path,found:true};return clone(st)}
+  if(path==='/api/mo2'){st.mo2.instance=b.path;st.mo2.underMo2=true;return clone(st)}
+  if(path==='/api/keep-sharp'){st.keepSharp=b.mods;return clone(st)}
+  if(path==='/api/plan')return plan(b);
+  if(path==='/api/fix'){run('fix','shrinking','Shrinking textures',8,3,endFix);emitJob(job('fix','shrinking','Shrinking textures',0,0,null));return{}}
+  if(path==='/api/undo'){st.fix.found=false;delete st.report.budgetArchive;return{removed:['x'],message:'The budget fix was removed. Your mods are as they were.'}}
+  if(path==='/api/live/start'){emitJob(job('live','waiting','Waiting for the game',0,0,null));let s=0;const id=setInterval(()=>{if(!st.busy||st.busy.kind!=='live'){clearInterval(id);return}s++;const j=job('live','measuring','Measuring',0,0,null);j.live={seconds:s,game:5.9*G+s*2e6,peak:6.4*G,gpuTotal:9*G};emitJob(j)},1000);T.push(id);return{}}
+  if(path==='/api/live/stop'){st.busy=null;st.live.sessions.push({label:'before',startedAt:new Date().toISOString(),seconds:300,peak:6.4*G,steady:6.0*G});st.lastJob={kind:'live',ok:true,message:'Saved the measurement.',finishedAt:new Date().toISOString(),details:{compare:'Change vs "before": peak -1.25 GB, steady -1.13 GB'}};refresh();return{}}
+  return{}};
+ return{api:(m,path,b)=>new Promise((ok,no)=>setTimeout(()=>{try{ok(route(m,path,b))}catch(e){no(e)}},50))}})();
+start();
+</script></body></html>

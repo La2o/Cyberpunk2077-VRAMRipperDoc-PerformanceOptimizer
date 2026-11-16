@@ -1,12 +1,37 @@
 VRAM RipperDoc - Performance Optimizer
 ======================================
 
-Double-click the numbered files in order:
+Double-click  Open VRAM RipperDoc.bat
+
+That opens the VRAM RipperDoc app in its own window. A small black console
+window stays open (minimized) while it runs: that is the tool itself, so leave
+it alone. Closing the app window closes the tool a few seconds later.
+
+In the app:
+  - Scan my mods: checks every texture and mesh mod you have installed (a
+    progress bar shows how far it is) and shows the report. The heaviest mods
+    are at the top, with a list of problems above them. Changes nothing.
+  - Apply budget fix: if you are over budget, this adds ONE extra file with
+    smaller copies of only the heaviest textures. A window shows your choices
+    and how the numbers change as you pick: half size for the heaviest
+    textures, and, if you like, 2K or 1K for the 4K textures of new clothing,
+    cars and props (softer up close, hard to see on small screens like the
+    Steam Deck's). Your mods are not changed, and nothing is written until you
+    confirm.
+  - Undo budget fix: removes that extra file again.
+  - Measure VRAM: records how much video memory the game really uses while
+    you play. Measure once as "before", apply the fix, then again as "after".
+  - Keep sharp: in the mod list, tick the mods the budget fix must never
+    shrink (for example a map mod). RipperDoc remembers the list, and the
+    numbered files below respect it too.
+  - Game folder: if the tool can't find your game, or you use Mod Organizer 2,
+    paste your game folder or MO2 folder into the field once. It remembers it.
+
+The numbered files still work exactly as before, if you prefer them:
 
   1 - Scan my mods.bat
       Checks every texture and mesh mod you have installed and opens a report
-      in your browser. The heaviest mods are at the top. Changes nothing.
-      Big mod lists can take a few minutes; a progress counter shows how far it is.
+      in your browser. Changes nothing. Big mod lists can take a few minutes.
       Using Mod Organizer 2? If no mods are found it asks for your MO2 folder once.
       Run through MO2, step 2 saves the fix as an MO2 mod named
       "VRAM RipperDoc Budget Fix": press F5 in MO2 and tick it to enable it.
@@ -14,13 +39,10 @@ Double-click the numbered files in order:
   2 - Apply budget fix.bat   (optional)
       If the report says you are over budget, this adds ONE extra file with
       half-size copies of only the heaviest textures. Your mods are not changed.
-      It scans first, then shows how many textures it would shrink, how big the
-      file will be and roughly how long it takes, and asks before writing.
-      A second question covers 4K textures of new clothing, cars and props
-      (they only use VRAM while you use them): shrink them to 2K, and if you
-      like, further to 1K (softer up close, hard to see on small screens like
-      the Steam Deck's). A progress counter shows how far it is; when it is
-      done it shows the new file in Explorer.
+      It scans first, shows how many textures it would shrink and how big the
+      file will be, and asks before writing. A second question covers 4K
+      textures of new clothing, cars and props: shrink them to 2K, or further
+      to 1K. When it is done it shows the new file in Explorer.
 
   3 - Measure VRAM in game.bat   (optional)
       Records how much video memory the game really uses while you play.
@@ -30,6 +52,9 @@ Double-click the numbered files in order:
   Undo budget fix.bat
       Removes the extra file from step 2, wherever it was saved (also the
       MO2 mod "VRAM RipperDoc Budget Fix"). Everything is back as it was.
+
+Using Mod Organizer 2? You can add Open VRAM RipperDoc.bat as an executable
+in MO2 and start it from there.
 
 This folder can live anywhere (game folder, Desktop, ...). If the tool can't
 find your game, it asks for the game folder once and remembers it.

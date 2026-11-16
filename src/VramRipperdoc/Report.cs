@@ -166,6 +166,17 @@ public static class Report
         w.WriteEndObject();
     }
 
+    /// <summary>The report files every scan leaves in the out folder (JSON, HTML, Summary.md). Returns the HTML report's path.</summary>
+    public static string WriteFiles(ScanResult r, BudgetPlan plan, string outDir)
+    {
+        var html = Path.Combine(outDir, "VRAM-RipperDoc-Report.html");
+        var json = Path.Combine(outDir, "VRAM-RipperDoc-Report.json");
+        using (var fs = File.Create(json)) WriteJson(r, plan, fs);
+        WriteHtml(r, plan, html);
+        File.WriteAllText(Path.Combine(outDir, "VRAM-RipperDoc-Summary.md"), Summary.Markdown(r, plan));
+        return html;
+    }
+
     public static void WriteHtml(ScanResult r, BudgetPlan plan, string path)
     {
         var ms = new MemoryStream();

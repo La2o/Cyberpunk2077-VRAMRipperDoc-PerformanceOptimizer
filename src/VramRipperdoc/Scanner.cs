@@ -111,6 +111,8 @@ public sealed class ScanOptions
     public Action<string>? Log;
     /// <summary>Called as archives finish: (done, total).</summary>
     public Action<int, int>? Progress;
+    /// <summary>Called when a stage starts: ("vanilla", 0) while reading the game's own files, then ("scanning", archives).</summary>
+    public Action<string, int>? Phase;
 }
 
 public sealed record ArchiveSource(string Path, string Source, string? Package = null, int? NexusId = null, string? Manager = null);
@@ -188,6 +190,7 @@ public sealed class Scanner
         if (!res.OodleLoaded) Log("! Oodle not found (bin/x64/oo2ext_7_win64.dll): sizes only, no texture/mesh details.");
 
         if (_o.HashList != null) LoadHashList(_o.HashList);
+        _o.Phase?.Invoke("vanilla", 0);
         if (_o.CompareVanilla) { Log("Reading the game's own file list (a few seconds)..."); res.BaseFileCount = LoadBaseIndex(); }
 
         var managers = ModManagers.Detect(_o.GameDir, modRoot, _o.Mo2Instance, Log);
@@ -195,6 +198,7 @@ public sealed class Scanner
         var order = DiscoverLoadOrder(modRoot, managers.ExtraArchives);
         res.BudgetArchive = BudgetArchive.FindExisting(modRoot);
         Log($"Found {order.Count} mod archive(s)." + (order.Count > 300 ? " Big mod lists take a few minutes; progress is shown below." : ""));
+        _o.Phase?.Invoke("scanning", order.Count);
         int done = 0;
         var mods = new ModReport[order.Count];
         var archives = new RdarArchive?[order.Count];

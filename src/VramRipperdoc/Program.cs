@@ -1,7 +1,6 @@
 using System.Diagnostics;
-using System.Text.RegularExpressions;
-using Microsoft.Win32;
 using VramRipperdoc;
+using static VramRipperdoc.Setup;
 
 const string Usage = """
 VRAM RipperDoc - Performance Optimizer
@@ -9,7 +8,10 @@ Ranks your Cyberpunk 2077 asset mods by the VRAM and geometry they add, and plan
 Most players only need the double-click shortcuts next to this exe (see START HERE.txt).
 
 Usage: VramRipperdoc [options]
- Scan (default, read-only)
+ App window (default when started without options)
+  --gui                     Open the app window (also takes --game, --mod-root, --mo2, --out, --budget, --vram, --gpu, --settings)
+  --cli                     Scan in this console instead, like the shortcuts do
+ Scan (read-only)
   --game <dir>              Cyberpunk 2077 folder (auto-detected for Steam/GOG/Epic or when run from inside it; otherwise asked for once)
   --budget <GB>             VRAM your mods may add during normal play (default: from your GPU and in-game settings)
   --vram <GB> [--gpu <name>]  Your graphics card's VRAM (default: detected)
@@ -36,7 +38,7 @@ Usage: VramRipperdoc [options]
 """;
 
 var flags = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-    { "no-vanilla", "no-open", "json", "help", "pause", "make-budget-archive", "include-new-items", "remove-budget-archive", "live", "share", "ask-mo2", "ask-game", "ask", "stress-all", "test-names", "test-share", "test-paths", "as-wine" };
+    { "no-vanilla", "no-open", "json", "help", "pause", "make-budget-archive", "include-new-items", "remove-budget-archive", "live", "share", "ask-mo2", "ask-game", "ask", "stress-all", "test-names", "test-share", "test-paths", "as-wine", "gui", "cli" };
 var opts = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
 for (int i = 0; i < args.Length; i++)
 {
@@ -83,13 +85,18 @@ if (opts.TryGetValue("test-epic", out var epicDir) && epicDir != null)
 }
 if (opts.TryGetValue("make-fixtures", out var fixturesOut) && fixturesOut != null)
     return Fixtures.Make(FindGame(opts.GetValueOrDefault("game")) ?? throw new Exception("game not found"), fixturesOut);
+if (opts.TryGetValue("test-gui", out var guiTestRoot) && guiTestRoot != null) return GuiTest.Run(guiTestRoot, opts);
+
+// Double-clicked (no options) or --gui: the app window. Every other option is the command line, as before.
+if (!opts.ContainsKey("cli") && (args.Length == 0 || opts.ContainsKey("gui"))) return GuiApp.Run(opts);
 
 var outDir = opts.GetValueOrDefault("out") ?? AppContext.BaseDirectory;
 bool quiet = opts.ContainsKey("json");
 void Log(string s) { if (!quiet) Console.Error.WriteLine(s); }
 
 // Remember folders the user gave us once (game, MO2), so the shortcuts keep working.
-var settingsFile = Path.Combine(AppContext.BaseDirectory, "RipperDoc.ini");
+var settingsFile = SettingsFile;
+var keepSharp = KeepSharp.Set(KeepSharp.Load(settingsFile));
 
 // The tool doesn't have to live inside the game folder: it can be unzipped anywhere.
 var game = FindGame(opts.GetValueOrDefault("game"), ReadSetting(settingsFile, "game"));
@@ -111,26 +118,13 @@ if (game == null)
 var modRoot = opts.GetValueOrDefault("mod-root") ?? game;
 
 var mo2 = opts.GetValueOrDefault("mo2") ?? ReadSetting(settingsFile, "mo2");
-// Where an MO2 user's fix was saved last time (a real MO2 mod folder, outside the virtual game folder).
-var savedFixDir = ReadSetting(settingsFile, "fixdir");
-// Everywhere else a fix can be, so Undo finds it however it was made (savedFixDir alone misses MO2 fixes, see KnownFixDirs).
-var fixDirs = BudgetArchive.KnownFixDirs(savedFixDir,
-    new[] { mo2, ModManagers.RunningMo2Instance() }.Concat(ModManagers.AllMo2Instances()), AppContext.BaseDirectory);
+// Everywhere a fix can be (the saved MO2 fix folder, MO2 instances...), so Undo finds it however it was made.
+var fixDirs = FixDirs(settingsFile, mo2);
 
 if (opts.ContainsKey("remove-budget-archive"))
 {
     var removed = BudgetArchive.Remove(modRoot, extraDirs: fixDirs);
-    if (removed.Count > 0)
-    {
-        Console.WriteLine("The budget fix was removed. Everything is back as it was.");
-        if (removed.Any(f => f.Contains(Mo2FixModName, StringComparison.OrdinalIgnoreCase)))
-            Console.WriteLine("(In Mod Organizer 2 you can now also delete the empty \"" + Mo2FixModName + "\" mod.)");
-    }
-    else
-    {
-        Console.WriteLine("No budget fix found, so there was nothing to remove.");
-        Console.WriteLine("(Mod Organizer 2: if a \"" + Mo2FixModName + "\" mod is still in MO2's list, untick or delete it there.)");
-    }
+    foreach (var line in Fix.RemovedMessages(removed)) Console.WriteLine(line);
     return 0;
 }
 if (opts.ContainsKey("live"))
@@ -195,23 +189,11 @@ catch (Exception ex)
     return 1;
 }
 
-// The Linux shortcuts pass what Wine can't see: the real GPU, and the settings file inside the game's Proton prefix.
-if (opts.TryGetValue("vram", out var vramArg) && double.TryParse(vramArg, System.Globalization.CultureInfo.InvariantCulture, out var vramGb) && vramGb > 0)
-    result.Gpu = new GpuInfo(opts.GetValueOrDefault("gpu") ?? result.Gpu?.Name ?? "GPU", (long)(vramGb * (1L << 30)));
-if (opts.GetValueOrDefault("settings") is { } settingsArg)
-    result.Settings = GameSettings.Load(Platform.FromUser(settingsArg)) ?? result.Settings;
-
-long budget;
-if (opts.TryGetValue("budget", out var b) && double.TryParse(b, System.Globalization.CultureInfo.InvariantCulture, out var gb))
-{
-    budget = (long)(gb * (1L << 30));
-    result.BudgetWhy = "set with --budget";
-}
-else (budget, result.BudgetWhy) = GpuInfo.SuggestBudget(result.Gpu?.VramBytes ?? 8L << 30, result.Settings);
-result.BudgetArchive ??= BudgetArchive.FindExisting(modRoot, fixDirs);
-if (result.BudgetArchive != null) result.FixCheck = BudgetArchive.Check(result.BudgetArchive, result);
+long budget = Budget(result, opts);
+CheckFix(result, modRoot, fixDirs);
 int newItemsMax = opts.GetValueOrDefault("new-items-to")?.Trim().ToLowerInvariant() is "1k" or "1024" ? 1024 : 2048;
-var plan = BudgetPlan.Build(result, budget, includeNew: opts.ContainsKey("include-new-items"), newItemsMax);
+var plan = BudgetPlan.Build(result, budget, includeNew: opts.ContainsKey("include-new-items"), newItemsMax, keepSharp);
+int keptSharp = result.Mods.Select(KeepSharp.NameOf).Where(keepSharp.Contains).Distinct(StringComparer.OrdinalIgnoreCase).Count();
 if (opts.ContainsKey("stress-all")) // developer stress test: halve every loaded 2K+ texture
     plan.Steps = result.Mods.SelectMany(m => m.Assets.Where(a => a.Kind == AssetKind.Texture && a.Loads && a.MaxDim >= 2048).Select(a => new PlanStep(m, a, 1, a.GpuBytes * 3 / 4))).ToList();
 
@@ -228,20 +210,25 @@ if (quiet)
 Directory.CreateDirectory(outDir);
 result.HistoryDiff = History.SaveAndDiff(result, outDir);
 bool makingFix = opts.ContainsKey("make-budget-archive");
-if (!makingFix) Report.PrintConsole(result, plan, int.TryParse(opts.GetValueOrDefault("top"), out var top) ? top : 25);
+if (!makingFix)
+{
+    Report.PrintConsole(result, plan, int.TryParse(opts.GetValueOrDefault("top"), out var top) ? top : 25);
+    if (keepSharp.Count > 0) Console.WriteLine(KeepSharp.Line(keptSharp));
+}
 
 string? openAfter = null;
 if (makingFix)
 {
     Console.WriteLine();
     Console.WriteLine(new string('=', 72));
+    if (keepSharp.Count > 0) Console.WriteLine(KeepSharp.Line(keptSharp));
     bool asked = false;
     if (opts.ContainsKey("ask") && !quiet)
     {
         // Show what each choice involves (counts, size, rough time) before asking.
         asked = true;
-        var normal = BudgetPlan.Build(result, budget, includeNew: false);
-        List<PlanStep> NewItems(int max) => BudgetPlan.Build(result, budget, includeNew: true, max).Steps.Where(s => !s.Asset.AlwaysLoaded).ToList();
+        var normal = BudgetPlan.Build(result, budget, includeNew: false, keepSharp: keepSharp);
+        List<PlanStep> NewItems(int max) => BudgetPlan.Build(result, budget, includeNew: true, max, keepSharp).Steps.Where(s => !s.Asset.AlwaysLoaded).ToList();
         var to2k = NewItems(2048);
         var to1k = NewItems(1024);
         var chosen = new List<PlanStep>();
@@ -297,29 +284,14 @@ if (makingFix)
     }
     else
     {
-        // Through MO2, writing into the virtual game folder can hang at the very end (seen in user logs),
-        // so the fix becomes a real MO2 mod folder instead. --mo2-output <instance> forces this (testing).
-        bool viaMo2 = UnderMo2() || opts.ContainsKey("mo2-output");
-        string? targetDir = null;
-        bool mo2ModFolder = false;
-        if (viaMo2)
-        {
-            var inst = opts.GetValueOrDefault("mo2-output") ?? mo2 ?? ModManagers.RunningMo2Instance();
-            var modsDir = inst != null ? ModManagers.Mo2ModsDir(inst) : null;
-            mo2ModFolder = modsDir != null;
-            var root = modsDir ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "VRAM RipperDoc");
-            targetDir = Path.Combine(root, Mo2FixModName, "archive", "pc", "mod");
-        }
-        int threads = int.TryParse(opts.GetValueOrDefault("threads"), out var t) && t > 0 ? t
-            : viaMo2 ? 2 // MO2's virtual file system is safest with little concurrent file I/O
-            : Math.Clamp(Environment.ProcessorCount - 1, 1, 8);
+        var target = Fix.PickTarget(opts.GetValueOrDefault("mo2-output"), mo2);
+        int threads = Fix.Threads(opts.GetValueOrDefault("threads"), target.ViaMo2);
         Console.WriteLine($"Writing the fix: {plan.Steps.Count:N0} texture(s). Leave this window open until it says DONE.");
         Console.WriteLine("  (Don't click inside this window while it works: Windows pauses programs while text is being selected.)");
-        var started = System.Diagnostics.Stopwatch.StartNew();
-        var status = new BudgetArchive.BuildStatus();
-        using var fixLog = OpenLog(Path.Combine(outDir, "VRAM-RipperDoc-Fix.log"));
-        void Trace(string s) { lock (fixLog) fixLog.WriteLine($"{DateTime.Now:HH:mm:ss.fff} {s}"); }
-        Trace($"v{Report.Version} game={game} mo2={viaMo2} threads={threads} steps={plan.Steps.Count}");
+        using var fix = new Fix.Writer(outDir);
+        var started = fix.Started;
+        var status = fix.Status;
+        void Trace(string s) => fix.Trace(s);
 
         // Progress runs on its own thread and only reads counters, so a blocked console can never stall the work.
         var buildDone = new ManualResetEventSlim();
@@ -331,11 +303,8 @@ if (makingFix)
                 int done = Volatile.Read(ref status.Done), total = Math.Max(1, status.Total);
                 if (done != lastDone) { lastDone = done; lastChange = DateTime.UtcNow; warned = false; }
                 string eta = "";
-                if (done >= 3 && done < total)
-                {
-                    var left = TimeSpan.FromSeconds(started.Elapsed.TotalSeconds / done * (total - done));
+                if (Fix.Eta(started.Elapsed, done, total) is { } left)
                     eta = left.TotalMinutes >= 1 ? $" · about {Math.Ceiling(left.TotalMinutes)} min left" : $" · about {Math.Max(1, Math.Ceiling(left.TotalSeconds))} s left";
-                }
                 bool saving = status.Phase == "saving";
                 Console.Write(saving
                     ? $"\r  Saving the fix file...                                              "
@@ -356,11 +325,8 @@ if (makingFix)
         }) { IsBackground = true };
         ui.Start();
         BudgetArchive.Outcome outcome;
-        Trace($"output: {targetDir ?? "game folder"}");
-        try { outcome = BudgetArchive.Build(result, plan, modRoot, Log, status, threads, Trace, targetDir, fixDirs); }
+        try { outcome = fix.Build(result, plan, game, modRoot, target, threads, fixDirs, settingsFile, Log); }
         finally { buildDone.Set(); ui.Join(2000); }
-        if (targetDir != null) WriteSetting(settingsFile, "fixdir", targetDir);
-        Trace($"finished: {outcome.Textures} written, {outcome.Skipped.Count} skipped, {started.Elapsed.TotalSeconds:0}s");
         Console.WriteLine($"  Finished in {started.Elapsed.TotalSeconds:0}s.");
         Console.WriteLine();
         result.BudgetArchive = outcome.Path;
@@ -370,20 +336,7 @@ if (makingFix)
         Console.WriteLine($"  {Platform.Shown(outcome.Path)}");
         if (outcome.Skipped.Count > 0) Console.WriteLine($"({outcome.Skipped.Count} texture(s) were skipped because their format can't be shrunk safely.)");
         Console.WriteLine();
-        if (mo2ModFolder)
-        {
-            Console.WriteLine($"MOD ORGANIZER 2: the fix was saved as a new MO2 mod called \"{Mo2FixModName}\".");
-            Console.WriteLine("  1. In MO2, press F5 (or the Refresh button) so it shows up in the left list.");
-            Console.WriteLine("  2. Tick its checkbox to enable it. That's it; start the game from MO2 as usual.");
-            Console.WriteLine("  To undo: untick it, or double-click \"Undo budget fix.bat\".");
-        }
-        else if (viaMo2)
-        {
-            Console.WriteLine("MOD ORGANIZER 2: your MO2 mods folder wasn't found, so the fix was saved as a ready-made mod folder:");
-            Console.WriteLine($"  {Platform.Shown(Path.GetDirectoryName(Path.GetDirectoryName(Path.GetDirectoryName(Path.GetDirectoryName(outcome.Path))))!)}");
-            Console.WriteLine("  Copy that folder into MO2's mods folder (or zip it and use MO2's \"Install a new mod from an archive\"), then enable it.");
-        }
-        else Console.WriteLine("Start the game as usual. To undo, double-click \"Undo budget fix.bat\".");
+        foreach (var line in Fix.NextSteps(target, outcome.Path, app: false)) Console.WriteLine(line);
         openAfter = outcome.Path;
     }
     Console.WriteLine(new string('=', 72));
@@ -407,11 +360,7 @@ if (opts.ContainsKey("share"))
     }
 }
 
-var html = Path.Combine(outDir, "VRAM-RipperDoc-Report.html");
-var json = Path.Combine(outDir, "VRAM-RipperDoc-Report.json");
-using (var fs = File.Create(json)) Report.WriteJson(result, plan, fs);
-Report.WriteHtml(result, plan, html);
-File.WriteAllText(Path.Combine(outDir, "VRAM-RipperDoc-Summary.md"), Summary.Markdown(result, plan));
+var html = Report.WriteFiles(result, plan, outDir);
 Console.WriteLine();
 Console.WriteLine($"Report: {Platform.Shown(html)}");
 if (!opts.ContainsKey("no-open") && OperatingSystem.IsWindows())
@@ -427,18 +376,13 @@ return 0;
 
 void Pause()
 {
-    // Double-clicked (no args): keep the window open so the summary can be read.
-    if ((args.Length == 0 || opts.ContainsKey("pause")) && !Console.IsInputRedirected)
+    // Started without options (now only --cli on its own): keep the window open so the summary can be read.
+    bool bare = args.All(a => a.Equals("--cli", StringComparison.OrdinalIgnoreCase));
+    if ((bare || opts.ContainsKey("pause")) && !Console.IsInputRedirected)
     {
         Console.WriteLine(Platform.IsWine ? "Press Enter to close." : "Press any key to close.");
         if (Platform.IsWine) Console.ReadLine(); else Console.ReadKey(true);
     }
-}
-
-static StreamWriter OpenLog(string path)
-{
-    try { Directory.CreateDirectory(Path.GetDirectoryName(path)!); return new StreamWriter(path, append: false) { AutoFlush = true }; }
-    catch { return StreamWriter.Null; }
 }
 
 // Windows "QuickEdit": clicking in a console window starts a text selection and pauses every
@@ -475,17 +419,8 @@ bool Ask(string question)
     }
 }
 
-// "About 240 MB to write, under a minute": size scales the halved data by each texture's compression ratio;
-// time assumes ~120 MB/s of source texture per worker thread (measured on a mid-range desktop).
-static string Describe(IReadOnlyCollection<PlanStep> steps)
-{
-    long bytes = BudgetArchive.EstimateBytes(steps);
-    double srcMb = steps.Sum(s => (double)s.Asset.GpuBytes) / (1 << 20);
-    int workers = Math.Clamp(Environment.ProcessorCount - 1, 1, 8);
-    double seconds = srcMb / (120.0 * workers) + steps.Count * 0.01;
-    string time = seconds < 60 ? "under a minute" : $"roughly {Math.Ceiling(seconds / 60)} minute(s)";
-    return $"About {Report.Size(bytes)} to write, {time}.";
-}
+// "About 240 MB to write, under a minute" (the app window shows the same estimate).
+static string Describe(IReadOnlyCollection<PlanStep> steps) => Fix.Describe(steps);
 
 string? AskForMo2()
 {
@@ -508,95 +443,6 @@ string? AskForMo2()
 
 static string? ReadPath() => Platform.FromUser(Console.ReadLine());
 
-// MO2 runs tools through its virtual file system (usvfs); new files then land in "Overwrite".
-static bool UnderMo2()
-{
-    try { return Process.GetCurrentProcess().Modules.Cast<ProcessModule>().Any(m => m.ModuleName.StartsWith("usvfs", StringComparison.OrdinalIgnoreCase)); }
-    catch { return false; }
-}
-
-static string? ReadSetting(string file, string key)
-{
-    try
-    {
-        if (!File.Exists(file)) return null;
-        var line = File.ReadAllLines(file).FirstOrDefault(l => l.StartsWith(key + "=", StringComparison.OrdinalIgnoreCase));
-        var v = line?[(key.Length + 1)..].Trim();
-        return string.IsNullOrEmpty(v) ? null : v;
-    }
-    catch { return null; }
-}
-
-static void WriteSetting(string file, string key, string value)
-{
-    try
-    {
-        var lines = File.Exists(file) ? File.ReadAllLines(file).Where(l => !l.StartsWith(key + "=", StringComparison.OrdinalIgnoreCase)).ToList() : new List<string>();
-        lines.Add($"{key}={value}");
-        File.WriteAllLines(file, lines);
-    }
-    catch { }
-}
-
-static bool IsGame(string? d) => d != null && Directory.Exists(Path.Combine(d, "archive", "pc", "content"));
-
-static string? FindGame(string? hint, string? saved = null)
-{
-    if (hint != null) return IsGame(hint) ? Path.GetFullPath(hint) : null;
-
-    // Installed as a mod: <game>/tools/VRAM RipperDoc/VramRipperdoc.exe
-    for (var d = new DirectoryInfo(AppContext.BaseDirectory); d != null; d = d.Parent)
-        if (IsGame(d.FullName)) return d.FullName;
-    for (var d = new DirectoryInfo(Environment.CurrentDirectory); d != null; d = d.Parent)
-        if (IsGame(d.FullName)) return d.FullName;
-    // Unzipped somewhere else: the game folder the player gave us before.
-    if (IsGame(saved)) return Path.GetFullPath(saved!);
-
-    var candidates = new List<string>();
-    if (OperatingSystem.IsWindows())
-    {
-        try
-        {
-            var steam = Registry.GetValue(@"HKEY_CURRENT_USER\Software\Valve\Steam", "SteamPath", null) as string;
-            foreach (var root in new[] { steam, @"C:\Program Files (x86)\Steam" }.Where(r => r != null))
-            {
-                var vdf = Path.Combine(root!, "steamapps", "libraryfolders.vdf");
-                candidates.Add(Path.Combine(root!, "steamapps", "common", "Cyberpunk 2077"));
-                if (File.Exists(vdf))
-                    foreach (Match m in Regex.Matches(File.ReadAllText(vdf), "\"path\"\\s+\"([^\"]+)\""))
-                        candidates.Add(Path.Combine(m.Groups[1].Value.Replace(@"\\", @"\"), "steamapps", "common", "Cyberpunk 2077"));
-            }
-            foreach (var key in new[] { @"HKEY_LOCAL_MACHINE\SOFTWARE\WOW6432Node\GOG.com\Games\1423049311", @"HKEY_LOCAL_MACHINE\SOFTWARE\GOG.com\Games\1423049311" })
-                if (Registry.GetValue(key, "path", null) is string gog) candidates.Add(gog);
-        }
-        catch { }
-        // Epic: the launcher's install manifests say where each game is, wherever it was installed.
-        candidates.AddRange(EpicInstallLocations(Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "Epic", "EpicGamesLauncher", "Data", "Manifests")));
-        candidates.Add(@"C:\Program Files\Epic Games\Cyberpunk 2077");
-        candidates.Add(@"C:\GOG Games\Cyberpunk 2077");
-    }
-    var found = candidates.FirstOrDefault(IsGame);
-    return found == null ? null : Path.GetFullPath(found);
-}
-
-static List<string> EpicInstallLocations(string manifestDir)
-{
-    var found = new List<string>();
-    try
-    {
-        foreach (var item in Directory.GetFiles(manifestDir, "*.item"))
-            try
-            {
-                using var doc = System.Text.Json.JsonDocument.Parse(File.ReadAllText(item));
-                if (doc.RootElement.TryGetProperty("InstallLocation", out var loc) && loc.GetString() is { Length: > 0 } dir) found.Add(dir);
-            }
-            catch { }
-    }
-    catch { }
-    return found;
-}
-
 string? AskForGame()
 {
     Console.WriteLine();
@@ -604,14 +450,9 @@ string? AskForGame()
     Console.Write("Drag your Cyberpunk 2077 folder (the one with \"bin\" and \"archive\") into this window, or paste its path, then press Enter: ");
     var answer = ReadPath();
     if (string.IsNullOrEmpty(answer)) return null;
-    try
-    {
-        // Also accept the game's exe or any folder inside the game.
-        for (var d = new DirectoryInfo(File.Exists(answer) ? Path.GetDirectoryName(answer)! : answer); d != null; d = d.Parent)
-            if (IsGame(d.FullName)) return d.FullName;
-    }
-    catch { }
-    Console.WriteLine("That doesn't look like the Cyberpunk 2077 folder (there's no archive\\pc\\content inside).");
+    // Also accept the game's exe or any folder inside the game.
+    if (GameFrom(answer) is { } dir) return dir;
+    Console.WriteLine(NotTheGame);
     return null;
 }
 

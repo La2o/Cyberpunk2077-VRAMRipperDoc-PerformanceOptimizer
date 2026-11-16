@@ -6,8 +6,20 @@ Oodle, which only exists for Windows), so these shortcuts run it through Wine
 or Steam's Proton. If you play Cyberpunk 2077 through Steam you already have
 Proton and don't need to install anything. Otherwise install Wine 8 or newer.
 
-Run the numbered files in this folder in order (on Steam Deck: Desktop Mode).
-They work like the Windows shortcuts described in START HERE.txt one folder up:
+Double-click  Open VRAM RipperDoc.sh  (on Steam Deck: in Desktop Mode).
+A terminal opens, and after a moment the VRAM RipperDoc app opens in its own
+window (in your browser, as an app window when Chromium, Chrome, Edge or Brave
+is installed). Closing the app window ends the tool a few seconds later; leave
+the terminal alone until then. In the app you can scan your mods, read the
+report, apply or undo the budget fix, and tick the mods the fix must never
+shrink ("Keep sharp"). It works like the Windows app described in
+START HERE.txt one folder up.
+
+Measuring VRAM stays in its own file here, because it has to watch the game
+from Linux itself: use  3 - Measure VRAM in game.sh  (the app's Measure VRAM
+button isn't available under Wine and points you to that file).
+
+The numbered files still work as before, if you prefer them:
 
   1 - Scan my mods.sh           Report of your heaviest mods. Changes nothing.
   2 - Apply budget fix.sh       Optional: ONE extra file with smaller textures.
@@ -17,12 +29,13 @@ They work like the Windows shortcuts described in START HERE.txt one folder up:
 Double-clicking opens a text editor instead of running it?
   Right-click the file > Properties > Permissions > tick "Is executable"
   (or "Allow executing file as program"), then double-click it again. Or open
-  a terminal in this folder and run, for example:  bash "1 - Scan my mods.sh"
+  a terminal in this folder and run, for example:  bash "Open VRAM RipperDoc.sh"
 
 What the shortcuts do for you:
   - Find the game in your Steam libraries (also on an SD card), Heroic, Lutris
     or Bottles, and read your graphics settings from the game's Proton prefix.
-    If the game isn't found, it asks: drag the game folder into the terminal.
+    If the game isn't found, it asks: drag the game folder into the terminal
+    (in the app, paste the folder into the game folder field).
   - Find your graphics card. The Steam Deck and other shared-memory GPUs are
     counted as 8 GB (change it with: ./ripperdoc.sh --vram 6).
   - Run the tool in its own small Wine folder (~/.local/share/vram-ripperdoc).
@@ -32,7 +45,8 @@ What the shortcuts do for you:
     through nvidia-smi), so step 3 works while the game runs in Proton.
 
 Using Mod Organizer 2 through Wine? If no mods are found, the tool asks for
-your MO2 folder: drag in the folder that contains ModOrganizer.ini.
+your MO2 folder: drag in the folder that contains ModOrganizer.ini (in the
+app, paste it into the folder field).
 
 Reports are saved one folder up (VRAM-RipperDoc-Report.html) and open in your
 browser. Advanced options:  ./ripperdoc.sh --help

@@ -75,6 +75,8 @@ public sealed class BudgetPlan
     public long NewItemSaves;
     public List<PlanStep> Steps = new();
     public List<(ModReport Mod, long Saves, int Count)> PerMod = new();
+    /// <summary>Textures the plan could have shrunk but left alone because their mod is on the keep-sharp list.</summary>
+    public List<(ModReport Mod, AssetInfo Asset)> KeptSharp = new();
     public bool Reachable => AfterPlan <= Budget;
 
     /// <summary>
@@ -82,14 +84,18 @@ public sealed class BudgetPlan
     /// (each halving removes ~75% of it), never below 1024 px, until the budget fits.
     /// With <paramref name="includeNew"/>, new items' textures above <paramref name="newItemsMax"/> (2K, or 1K) are also
     /// halved down to it: they only cost VRAM while used, so they never count against the budget itself.
+    /// Mods in <paramref name="keepSharp"/> (see <see cref="VramRipperdoc.KeepSharp"/>) are never shrunk.
     /// Original archives are never touched; the plan is applied as a separate archive.
     /// </summary>
-    public static BudgetPlan Build(ScanResult r, long budget, bool includeNew = false, int newItemsMax = 2048)
+    public static BudgetPlan Build(ScanResult r, long budget, bool includeNew = false, int newItemsMax = 2048, IReadOnlySet<string>? keepSharp = null)
     {
         var plan = new BudgetPlan { Budget = budget, Current = r.AlwaysDelta, WhenUsed = r.WhenUsedDelta, IncludeNew = includeNew, NewItemsMax = newItemsMax };
         long current = plan.Current;
+        bool Kept(ModReport m) => keepSharp is { Count: > 0 } && keepSharp.Contains(VramRipperdoc.KeepSharp.NameOf(m));
         var candidates = r.Mods.SelectMany(m => m.Assets.Where(a => a.Kind == AssetKind.Texture && a.Loads && a.AlwaysLoaded && a.MaxDim >= 2048 && a.DeltaGpu > 0)
             .Select(a => (Mod: m, Asset: a))).ToList();
+        plan.KeptSharp.AddRange(candidates.Where(c => Kept(c.Mod)));
+        candidates.RemoveAll(c => Kept(c.Mod));
         var state = candidates.ToDictionary(c => c.Asset, c => (c.Mod, Halvings: 0, Gpu: c.Asset.GpuBytes));
         var pq = new PriorityQueue<AssetInfo, long>();
         foreach (var c in candidates) pq.Enqueue(c.Asset, -(c.Asset.GpuBytes * 3 / 4));
@@ -113,6 +119,7 @@ public sealed class BudgetPlan
             foreach (var m in r.Mods)
                 foreach (var a in m.Assets.Where(a => a.Kind == AssetKind.Texture && a.Loads && !a.AlwaysLoaded && a.MaxDim > newItemsMax && a.MaxDim >= 2048))
                 {
+                    if (Kept(m)) { plan.KeptSharp.Add((m, a)); continue; }
                     int halvings = 0;
                     while ((a.MaxDim >> halvings) > newItemsMax) halvings++;
                     long save = a.GpuBytes - (a.GpuBytes >> (2 * halvings)); // each halving removes ~75%

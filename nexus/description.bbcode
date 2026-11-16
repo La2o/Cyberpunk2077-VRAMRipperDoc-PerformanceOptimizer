@@ -4,11 +4,11 @@
 [size=4][b]Who it's for[/b][/size]
 Anyone with lots of texture, clothing, character, vehicle or environment mods. It matters most on [b]8–16 GB cards[/b], but big 4K texture packs can fill even a [b]24 GB[/b] card. When VRAM runs out you get stutter, blurry textures popping in, or crashes. If you're not short on VRAM this won't raise your FPS, but the report still finds broken and useless files.
 
-[size=4][b]Quick start (3 double-clicks)[/b][/size]
-Close the game first. Then open the [i]VRAM RipperDoc[/i] folder ([i]Cyberpunk 2077\tools\VRAM RipperDoc\[/i] if you extracted it into the game or used Vortex) and double-click:
+[size=4][b]Quick start[/b][/size]
+Close the game first. Then open the [i]VRAM RipperDoc[/i] folder ([i]Cyberpunk 2077\tools\VRAM RipperDoc\[/i] if you extracted it into the game or used Vortex) and double-click [b]Open VRAM RipperDoc.bat[/b]. That opens the app in its own window. Press [b]Scan my mods[/b]; when it's done the report shows your heaviest mods, with a list of problems at the top. If you're over budget, press [b]Apply budget fix[/b]: a window shows your choices and how the numbers change as you pick. [b]Undo budget fix[/b] and [b]Measure VRAM[/b] are in the app too, and if it can't find your game (or you use Mod Organizer 2) you paste your game folder or MO2 folder into a field once. Prefer one step at a time? The three numbered files do the same and work exactly as before:
 [list=1]
 [*][b]1 - Scan my mods.bat[/b]: checks every texture and mesh mod and opens a report in your browser. Changes nothing. With a big mod list this takes a few minutes; a progress counter shows how far it is. Using Mod Organizer 2? If no mods are found, it asks for your MO2 folder once and remembers it.
-[*][b]2 - Apply budget fix.bat[/b] [i](optional)[/i]: if the report says you're over budget, this adds [b]one extra file[/b] with half-size copies of only your heaviest textures. It scans first, then shows how many textures it would shrink, how big the file will be and roughly how long it takes, and asks before writing anything. A second question covers the 4K textures of new clothing, cars and props: shrink them to 2K, or further to 1K (softer up close, hard to see on small screens like the Steam Deck's). A "Writing fix: X / Y" counter shows progress, and when it's done it says what it did and shows the new file in Explorer. Your mods stay exactly as they are.
+[*][b]2 - Apply budget fix.bat[/b] [i](optional)[/i]: if the report says you're over budget, this adds [b]one extra file[/b] with half-size copies of only your heaviest textures. It scans first, then shows how many textures it would shrink, how big the file will be and roughly how long it takes, and asks before writing anything. A second question covers the 4K textures of new clothing, cars and props: shrink them to 2K, or further to 1K (softer up close, hard to see on small screens like the Steam Deck's). A "Writing fix: X / Y" counter shows progress, and when it's done it says what it did and shows the new file in Explorer. Your mods stay exactly as they are. [b]Keep sharp:[/b] in the app's mod list, tick the mods the fix must never shrink (for example a map mod). The list is remembered, and this shortcut respects it too.
 [*][b]3 - Measure VRAM in game.bat[/b] [i](optional)[/i]: records how much VRAM the game really uses while you play. Run it once named "before" and once named "after" (same save, same spot) to see what changed.
 [/list]
 Changed your mind? Double-click [b]Undo budget fix.bat[/b] and everything is back as it was.
@@ -28,7 +28,7 @@ Changed your mind? Double-click [b]Undo budget fix.bat[/b] and everything is bac
 [*]Each mod gets two numbers. [b]Normal play[/b] is the extra VRAM it adds because it replaces game files, so it's loaded whenever those things are on screen; this is what counts against your budget. [b]When used[/b] is for new clothing, cars, weapons and props, which only take VRAM while you wear, drive or spawn them.
 [*]Mods at the top of the table cost the most during normal play. Click a mod to see its heaviest files.
 [*][color=#ff4d6d]Red numbers[/color] are worth a look: flags, missing files, or being over budget.
-[*]Over budget? The simplest fix is often the [b]1K or 2K version[/b] of a big texture mod, if the author offers one. Otherwise use [b]2 - Apply budget fix[/b].
+[*]Over budget? The simplest fix is often the [b]1K or 2K version[/b] of a big texture mod, if the author offers one. Otherwise use [b]Apply budget fix[/b] in the app (or [b]2 - Apply budget fix[/b]). Mods you tick under [b]Keep sharp[/b] are never shrunk.
 [*]Need help with a crash or stutter? Click [b]Copy summary for a support post[/b] and paste it into your post.
 [/list]
 
@@ -36,13 +36,16 @@ Changed your mind? Double-click [b]Undo budget fix.bat[/b] and everything is bac
 [list]
 [*][b]Manual download (simplest):[/b] extract the zip anywhere, for example into your Cyberpunk 2077 folder (the one with [i]bin[/i] and [i]archive[/i]) or onto your Desktop. It finds Steam, GOG and Epic installs by itself; if it can't, it asks for your game folder once and remembers it.
 [*][b]Vortex:[/b] Vortex only knows game mods, so for this tool it says [i]"You Have Reached The Fallback Installer!"[/i]. Click [b]Yes, Install To Staging Anyway[/b], then [b]enable[/b] the mod in Vortex's mod list. Only then do the files appear in [i]Cyberpunk 2077\tools\VRAM RipperDoc[/i].
-[*][b]Mod Organizer 2:[/b] install and enable it like any other mod. The files are in the mod's own folder: right-click it in MO2, [i]Open in Explorer[/i], then [i]tools\VRAM RipperDoc[/i].
-[*][b]Linux and Steam Deck:[/b] extract the zip anywhere and run the shortcuts in the [i]Linux[/i] folder (on the Deck, in Desktop Mode). They run the tool through Steam's Proton or Wine, find your game (SD card, Heroic, Lutris and Bottles included) and its settings, and measure VRAM through Linux itself. If you play through Steam there is nothing to install. [i]START HERE (Linux).txt[/i] explains it.
+[*][b]Mod Organizer 2:[/b] install and enable it like any other mod. The files are in the mod's own folder: right-click it in MO2, [i]Open in Explorer[/i], then [i]tools\VRAM RipperDoc[/i]. You can also add [i]Open VRAM RipperDoc.bat[/i] as an executable in MO2 and start the app from there.
+[*][b]Linux and Steam Deck:[/b] extract the zip anywhere and run the shortcuts in the [i]Linux[/i] folder (on the Deck, in Desktop Mode); [i]Open VRAM RipperDoc.sh[/i] opens the app. They run the tool through Steam's Proton or Wine, find your game (SD card, Heroic, Lutris and Bottles included) and its settings, and measure VRAM through Linux itself. If you play through Steam there is nothing to install. [i]START HERE (Linux).txt[/i] explains it.
 [/list]
 No requirements. It runs on its own on Windows 10/11 (64-bit), and on Linux and Steam Deck through Proton or Wine.
 
 [size=4][b]FAQ[/b][/size]
 [spoiler]
+[b]A black console window stays open (minimized) while the app is open.[/b]
+That window is the tool itself, so leave it alone. Closing the app window closes the tool about 20 seconds later (if a scan or fix is running, it finishes first). Closing the black window closes the app.
+
 [b]A "Cyber Engine Tweaks" box says "Failed to get ...\VRAM RipperDoc\version.dll handle" and the tool closes.[/b]
 Fixed in v0.2.7, please update. Older versions accidentally loaded the game's mod loaders (RED4ext/CET) into the tool, and CET then shut it down. Your CET install is fine.
 

@@ -67,14 +67,71 @@ public static class LiveMonitor
         public void Dispose() => PdhCloseQuery(_q);
     }
 
+    /// <summary>Why measuring can't start here, or null when it can (without piped samples).</summary>
+    public static string? Unavailable() =>
+        Platform.IsWine ? "On Linux, measure with \"3 - Measure VRAM in game.sh\" in the Linux folder."
+        : !OperatingSystem.IsWindows() ? "Live monitoring needs Windows." : null;
+
+    /// <summary>
+    /// A measuring session as it runs: read by the app window without blocking, and stopped by <see cref="Stop"/>
+    /// (the console's Ctrl+C does the same).
+    /// </summary>
+    public sealed class Recorder
+    {
+        volatile bool _stop;
+        long _game, _peak, _gpu, _ms;
+        /// <summary>"waiting" for the game to start, then "measuring".</summary>
+        public volatile string Phase = "waiting";
+        public void Stop() => _stop = true;
+        public bool Stopping => _stop;
+        public long Game => Interlocked.Read(ref _game);
+        public long Peak => Interlocked.Read(ref _peak);
+        public long GpuTotal => Interlocked.Read(ref _gpu);
+        public double Seconds => Interlocked.Read(ref _ms) / 1000.0;
+
+        internal void Sample(TimeSpan elapsed, long game, long peak, long gpu)
+        {
+            Interlocked.Exchange(ref _game, game); Interlocked.Exchange(ref _peak, peak);
+            Interlocked.Exchange(ref _gpu, gpu); Interlocked.Exchange(ref _ms, (long)elapsed.TotalMilliseconds);
+        }
+    }
+
     /// <param name="samplesIn">
     /// Linux: "3 - Measure VRAM in game.sh" waits for the game itself (Wine can't see Proton's processes) and pipes one
     /// "&lt;game VRAM bytes&gt; &lt;GPU total bytes&gt;" line per second; the session ends when the pipe closes.
     /// </param>
     public static int Run(string processName, string label, int seconds, string outDir, bool budgetArchiveActive, TextReader? samplesIn = null)
     {
-        bool stop = false;
-        Console.CancelKeyPress += (_, e) => { e.Cancel = true; stop = true; };
+        var rec = new Recorder();
+        Console.CancelKeyPress += (_, e) => { e.Cancel = true; rec.Stop(); };
+        if (samplesIn == null && Unavailable() is { } why) { Console.Error.WriteLine(why); return 2; }
+        var session = Record(processName, label, seconds, outDir, budgetArchiveActive, samplesIn, rec, Console.WriteLine,
+            (elapsed, proc, peak, adapter) =>
+            {
+                if (!Console.IsOutputRedirected)
+                    Console.Write($"\r  {elapsed:hh\\:mm\\:ss}  game VRAM {Report.Size(proc),9}  peak {Report.Size(peak),9}  GPU total {Report.Size(adapter),9}   ");
+            },
+            out bool started, out var csvPath, out var history);
+        if (!started) return 1;
+        Console.WriteLine();
+        if (session == null) { Console.WriteLine("No samples collected."); return 1; }
+
+        Console.WriteLine($"Session \"{label}\": {session.Samples} samples, peak {Report.Size(session.Peak)}, 95th pct {Report.Size(session.P95)}, steady (last 60 s) {Report.Size(session.Steady)}");
+        Console.WriteLine($"CSV: {Platform.Shown(csvPath!)}");
+        PrintComparison(history);
+        return 0;
+    }
+
+    /// <summary>
+    /// Waits for the game (unless samples are piped in), then records until <paramref name="rec"/> is stopped, the game
+    /// closes or <paramref name="seconds"/> pass. Writes the CSV and adds the session to VRAM-RipperDoc-Live.json.
+    /// <paramref name="started"/> is false when it was stopped before the game started (nothing written then).
+    /// Returns null when no samples came in.
+    /// </summary>
+    public static Session? Record(string processName, string label, int seconds, string outDir, bool budgetArchiveActive, TextReader? samplesIn,
+        Recorder rec, Action<string> say, Action<TimeSpan, long, long, long>? onSample, out bool started, out string? csvPath, out List<Session> history)
+    {
+        started = false; csvPath = null; history = new();
         Query? q = null;
         Func<(long Process, long Adapter)?> next;
         string what;
@@ -93,13 +150,11 @@ public static class LiveMonitor
         }
         else
         {
-            if (Platform.IsWine) { Console.Error.WriteLine("On Linux, measure with \"3 - Measure VRAM in game.sh\" in the Linux folder."); return 2; }
-            if (!OperatingSystem.IsWindows()) { Console.Error.WriteLine("Live monitoring needs Windows."); return 2; }
             q = new Query();
-            Console.WriteLine($"Waiting for {processName}.exe ... (Ctrl+C to stop)");
+            say($"Waiting for {processName}.exe ... (Ctrl+C to stop)");
             Process? p = null;
-            while (!stop && (p = Process.GetProcessesByName(processName).FirstOrDefault()) == null) Thread.Sleep(1000);
-            if (p == null) { q.Dispose(); return 1; }
+            while (!rec.Stopping && (p = Process.GetProcessesByName(processName).FirstOrDefault()) == null) Thread.Sleep(1000);
+            if (p == null) { q.Dispose(); return null; }
             var game = p;
             what = $"{processName}.exe (pid {game.Id})";
             next = () =>
@@ -110,41 +165,43 @@ public static class LiveMonitor
             };
         }
         using var pdh = q;
+        started = true;
+        rec.Phase = "measuring";
 
         Directory.CreateDirectory(outDir);
         var start = DateTime.Now;
-        var csvPath = Path.Combine(outDir, $"VRAM-Live-{Sanitize(label)}-{start:yyyyMMdd-HHmmss}.csv");
+        csvPath = Path.Combine(outDir, $"VRAM-Live-{Sanitize(label)}-{start:yyyyMMdd-HHmmss}.csv");
         using var csv = new StreamWriter(csvPath);
         csv.WriteLine("seconds,process_dedicated_bytes,adapter_dedicated_bytes");
         var samples = new List<long>();
-        long adapterPeak = 0;
+        long adapterPeak = 0, peak = 0;
         var sw = Stopwatch.StartNew();
-        Console.WriteLine($"Measuring {what} as \"{label}\"{(budgetArchiveActive ? " [budget archive active]" : "")}. Play normally; stop with Ctrl+C or by closing the game.");
-        while (!stop && (seconds <= 0 || sw.Elapsed.TotalSeconds < seconds) && next() is { } sample)
+        say($"Measuring {what} as \"{label}\"{(budgetArchiveActive ? " [budget archive active]" : "")}. Play normally; stop with Ctrl+C or by closing the game.");
+        while (!rec.Stopping && (seconds <= 0 || sw.Elapsed.TotalSeconds < seconds) && next() is { } sample)
         {
             var (proc, adapter) = sample;
             if (proc <= 0) continue;
             samples.Add(proc);
+            peak = Math.Max(peak, proc);
             adapterPeak = Math.Max(adapterPeak, adapter);
             csv.WriteLine($"{sw.Elapsed.TotalSeconds:0},{proc},{adapter}");
-            if (!Console.IsOutputRedirected)
-                Console.Write($"\r  {sw.Elapsed:hh\\:mm\\:ss}  game VRAM {Report.Size(proc),9}  peak {Report.Size(samples.Max()),9}  GPU total {Report.Size(adapter),9}   ");
+            rec.Sample(sw.Elapsed, proc, peak, adapter);
+            onSample?.Invoke(sw.Elapsed, proc, peak, adapter);
         }
-        Console.WriteLine();
-        if (samples.Count == 0) { Console.WriteLine("No samples collected."); return 1; }
+        if (samples.Count == 0) return null;
 
         var sorted = samples.OrderBy(x => x).ToList();
         var session = new Session(label, start, sw.Elapsed.TotalSeconds, sorted[^1], sorted[Math.Min(sorted.Count - 1, (int)(sorted.Count * 0.95))],
             (long)samples.TakeLast(60).Average(), adapterPeak, budgetArchiveActive, samples.Count);
-        var history = LoadSessions(outDir);
+        history = LoadSessions(outDir);
         history.Add(session);
         SaveSessions(outDir, history);
-
-        Console.WriteLine($"Session \"{label}\": {samples.Count} samples, peak {Report.Size(session.Peak)}, 95th pct {Report.Size(session.P95)}, steady (last 60 s) {Report.Size(session.Steady)}");
-        Console.WriteLine($"CSV: {Platform.Shown(csvPath)}");
-        PrintComparison(history);
-        return 0;
+        return session;
     }
+
+    /// <summary>"Change vs "before": peak -1.25 GB, steady -1.13 GB" (b is the newer session).</summary>
+    public static string Compare(Session a, Session b) =>
+        $"Change vs \"{a.Label}\": peak {Report.Size(b.Peak - a.Peak)}, steady {Report.Size(b.Steady - a.Steady)}";
 
     public static void PrintComparison(List<Session> history)
     {
@@ -153,8 +210,7 @@ public static class LiveMonitor
         Console.WriteLine($"{"Session",-22} {"When",-17} {"Peak",10} {"95th pct",10} {"Steady",10}  Budget archive");
         foreach (var s in history.TakeLast(6))
             Console.WriteLine($"{s.Label,-22} {s.Start,-17:yyyy-MM-dd HH:mm} {Report.Size(s.Peak),10} {Report.Size(s.P95),10} {Report.Size(s.Steady),10}  {(s.BudgetArchive ? "yes" : "no")}");
-        var a = history[^2]; var b = history[^1];
-        Console.WriteLine($"Change vs \"{a.Label}\": peak {Report.Size(b.Peak - a.Peak)}, steady {Report.Size(b.Steady - a.Steady)} (load the same save and stand still for the fairest comparison)");
+        Console.WriteLine(Compare(history[^2], history[^1]) + " (load the same save and stand still for the fairest comparison)");
     }
 
     static string SessionsPath(string dir) => Path.Combine(dir, "VRAM-RipperDoc-Live.json");
@@ -182,12 +238,18 @@ public static class LiveMonitor
         foreach (var s in sessions)
         {
             w.WriteStartObject();
-            w.WriteString("label", s.Label); w.WriteString("start", s.Start); w.WriteNumber("seconds", Math.Round(s.Seconds));
-            w.WriteNumber("peak", s.Peak); w.WriteNumber("p95", s.P95); w.WriteNumber("steady", s.Steady);
-            w.WriteNumber("gpuTotalPeak", s.GpuTotalPeak); w.WriteBoolean("budgetArchive", s.BudgetArchive); w.WriteNumber("samples", s.Samples);
+            WriteSession(w, s);
             w.WriteEndObject();
         }
         w.WriteEndArray();
+    }
+
+    /// <summary>A session's fields as VRAM-RipperDoc-Live.json stores them (the app window shows the same).</summary>
+    public static void WriteSession(Utf8JsonWriter w, Session s)
+    {
+        w.WriteString("label", s.Label); w.WriteString("start", s.Start); w.WriteNumber("seconds", Math.Round(s.Seconds));
+        w.WriteNumber("peak", s.Peak); w.WriteNumber("p95", s.P95); w.WriteNumber("steady", s.Steady);
+        w.WriteNumber("gpuTotalPeak", s.GpuTotalPeak); w.WriteBoolean("budgetArchive", s.BudgetArchive); w.WriteNumber("samples", s.Samples);
     }
 
     static string Sanitize(string s) => string.Concat(s.Select(c => char.IsLetterOrDigit(c) || c is '-' or '_' ? c : '_'));

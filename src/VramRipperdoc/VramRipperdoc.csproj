@@ -7,7 +7,7 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <AssemblyName>VramRipperdoc</AssemblyName>
     <RootNamespace>VramRipperdoc</RootNamespace>
-    <Version>0.4.0</Version>
+    <Version>0.5.0</Version>
     <InvariantGlobalization>true</InvariantGlobalization>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <SelfContained>true</SelfContained>
@@ -21,4 +21,8 @@
     <Company>La2o</Company>
     <Description>Ranks Cyberpunk 2077 asset mods by the VRAM and geometry they add.</Description>
   </PropertyGroup>
+  <ItemGroup>
+    <!-- The app window's page (see docs/gui-api.md), served from memory: nothing is read from disk at run time. -->
+    <EmbeddedResource Include="Gui\app.html" LogicalName="app.html" />
+  </ItemGroup>
 </Project>

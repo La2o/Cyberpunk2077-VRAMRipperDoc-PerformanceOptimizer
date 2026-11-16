@@ -31,10 +31,11 @@ if [ ! -t 0 ] && [ -z "${RIPPERDOC_IN_TERMINAL:-}" ] && { [ -n "${DISPLAY:-}" ] 
 fi
 
 pause=""; [ -n "${RIPPERDOC_IN_TERMINAL:-}" ] && pause=1
-live=""; ask_label=""; open_report=1; args=()
+live=""; ask_label=""; open_report=1; gui=""; args=()
 while [ $# -gt 0 ]; do
     case "$1" in
         --pause) pause=1 ;;                           # handled here: the exe's own key prompt is unreliable under Wine
+        --gui) gui=1; open_report=""; pause="" ;;     # the app window: handled below, nothing to pause for
         --ask-label) ask_label=1 ;;
         --say) shift; echo "${1:-}" ;;
         --live) live=1; open_report="" ;;
@@ -262,6 +263,78 @@ sample_game() {   # "<game VRAM bytes> <GPU total bytes>", one line per second u
         sleep 1
     done
 }
+
+# The app window: the exe serves one page on 127.0.0.1 (opened here with the Linux browser, not through Wine) and ends
+# by itself a little after the window is closed.
+port_answers() { (exec 3<>"/dev/tcp/127.0.0.1/$1") 2>/dev/null; }
+random_token() {
+    local t
+    t="$(od -An -N16 -tx1 /dev/urandom 2>/dev/null | tr -d ' \n')"
+    [ "${#t}" -ge 16 ] || t="$(printf '%x%x%x%x' "$RANDOM" "$RANDOM" "$RANDOM" "$RANDOM")$(date +%s%N 2>/dev/null)"
+    echo "$t"
+}
+open_app_window() {   # an app-style window when a Chromium-family browser is installed, else the default browser
+    local url="$1" b id
+    local opener=(); command -v setsid >/dev/null 2>&1 && opener=(setsid)   # detached: closing the terminal
+    for b in chromium chromium-browser google-chrome google-chrome-stable microsoft-edge brave-browser; do
+        command -v "$b" >/dev/null 2>&1 || continue
+        ("${opener[@]}" "$b" "--app=$url" >/dev/null 2>&1 &)                 # mustn't close the app
+        return 0
+    done
+    if command -v flatpak >/dev/null 2>&1; then
+        for id in org.chromium.Chromium com.google.Chrome com.microsoft.Edge com.brave.Browser; do
+            flatpak info "$id" >/dev/null 2>&1 || continue
+            ("${opener[@]}" flatpak run "$id" "--app=$url" >/dev/null 2>&1 &)
+            return 0
+        done
+    fi
+    if command -v xdg-open >/dev/null 2>&1; then
+        ("${opener[@]}" xdg-open "$url" >/dev/null 2>&1 &)
+        return 0
+    fi
+    return 1
+}
+if [ -n "$gui" ]; then
+    port=""
+    for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
+        p=$((47800 + (RANDOM * 32768 + RANDOM) % 1000))
+        port_answers "$p" || { port="$p"; break; }                           # something answers there: pick another
+    done
+    if [ -z "$port" ]; then echo "Couldn't find a free port for the app."; finish 1; fi
+    token="$(random_token)"
+    url="http://127.0.0.1:$port/?t=$token"
+    run_wine "$exe" "${extra[@]}" --gui --gui-port "$port" --gui-token "$token" "${args[@]}" &
+    exe_pid=$!
+    ready=""
+    for _ in $(seq 1 240); do                                                # about 60 seconds
+        kill -0 "$exe_pid" 2>/dev/null || break
+        if port_answers "$port"; then ready=1; break; fi
+        sleep 0.25
+    done
+    if [ -z "$ready" ]; then
+        if kill -0 "$exe_pid" 2>/dev/null; then
+            echo "The app didn't start within a minute, so it was stopped."
+            kill "$exe_pid" 2>/dev/null
+            wait "$exe_pid" 2>/dev/null
+            code=1
+        else
+            wait "$exe_pid" 2>/dev/null; code=$?
+            echo "The app closed right after starting (exit code $code), so there is nothing to open."
+            [ "$code" -eq 0 ] && code=1
+        fi
+        echo "Try the numbered files in this folder instead, or run: ./ripperdoc.sh --help"
+        finish "$code"
+    fi
+    echo "Opening the VRAM RipperDoc app..."
+    echo "Closing the app window ends the tool."
+    if ! open_app_window "$url"; then
+        echo "No browser was found to open it. Open this address yourself:"
+        echo "$url"
+    fi
+    wait "$exe_pid"
+    code=$?
+    finish "$code"
+fi
 
 start_marker="$(mktemp)"
 if [ -n "$live" ]; then

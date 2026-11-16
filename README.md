@@ -43,20 +43,30 @@ Requirements: Windows 10/11 x64, or Linux with Proton or Wine 8+. No .NET instal
 
 ## Use
 
-Open `tools\VRAM RipperDoc\` and double-click the numbered shortcuts (`START HERE.txt` explains them):
+Open `tools\VRAM RipperDoc\` and double-click **`Open VRAM RipperDoc.bat`**. That opens the app: scan your mods (with a progress bar), read the report (a Problems list sits at the top), apply the budget fix (a window shows your choices and the numbers as you pick, including shrinking new clothing, cars and props to 2K or 1K), undo it, measure VRAM in game, and choose your game folder or Mod Organizer 2 folder by pasting it into a field. A small console window stays open (minimized) while the app runs; it is the tool itself, and closing the app window closes it about 20 seconds later (a running job finishes first).
+
+**Keep sharp:** in the app's mod list, tick the mods the budget fix must never shrink, for example a map mod. The list is saved in `RipperDoc.ini` and the command-line shortcuts honour it too.
+
+The numbered shortcuts do the same things one step at a time, and still work exactly as before (`START HERE.txt` explains them):
 
 | Shortcut | What it does |
 |---|---|
+| `Open VRAM RipperDoc.bat` | Opens the app, which does everything below. |
 | `1 - Scan my mods.bat` | Scans and opens `VRAM-RipperDoc-Report.html`. Changes nothing. |
 | `2 - Apply budget fix.bat` | Asks first, then writes the one extra budget archive. |
 | `3 - Measure VRAM in game.bat` | Asks for a name (for example *before* or *after*), then records real VRAM until you close the game. |
 | `Undo budget fix.bat` | Removes the budget archive wherever it was saved: the game folder, the MO2 mod "VRAM RipperDoc Budget Fix", or MO2's Overwrite folder (fixes made with v0.2.4 or older). |
 
-On Linux the same shortcuts are in the `Linux` folder as `.sh` files. `./ripperdoc.sh` there takes all the options below.
+On Linux the same shortcuts are in the `Linux` folder as `.sh` files, with `Open VRAM RipperDoc.sh` for the app (Measure VRAM stays in `3 - Measure VRAM in game.sh` there). `./ripperdoc.sh` takes all the options below, and `./ripperdoc.sh --gui` opens the app.
+
+**How the app works:** `VramRipperdoc.exe` serves one page on `127.0.0.1` (your own PC only) and shows it in an Edge or Chrome app-style window, or your default browser if neither is found. The page only answers requests that carry the secret key the exe was started with, so other programs and websites can't use it. The app needs no network access and installs nothing. The API behind the page is described in [docs/gui-api.md](docs/gui-api.md).
 
 Everything is also available from the command line:
 
 ```
+ Open the app
+  --gui                     Open the app window (also what starting the exe with no options does)
+  --cli                     Run the command-line scan without the app (what starting with no options did before 0.5.0)
  Scan (default, read-only)
   --game <dir>              Cyberpunk 2077 folder (auto-detected for Steam/GOG/Epic, or when run from inside it)
   --budget <GB>             VRAM your mods may add (default: from your GPU and in-game settings)
