@@ -272,13 +272,22 @@ public sealed class Scanner
                 // Hard references that point nowhere (only ones the mod added, so vanilla's own dead links don't count).
                 // A file exists when a mod, the game or a plugin's bundle has it, or when an .xl file creates it.
                 if (_o.CompareVanilla)
+                {
+                    var miss = new List<string>(); bool anyFound = false;
                     foreach (var imp in a.NewImports)
                     {
                         if (imp.IndexOfAny(new[] { '*', '{', '}', '$', '%' }) >= 0) continue;
                         var h = Fnv1a64.Hash(imp);
-                        if (!existing.Contains(h) && !_baseIndex.ContainsKey(h) && !_frameworkFiles.Contains(h) && !_xlPaths.Contains(h))
-                            a.MissingImports.Add(imp);
+                        // Empty or "none": a slot left blank on purpose, not a file.
+                        if (h == 0 || imp.Trim().Equals("none", StringComparison.OrdinalIgnoreCase)) continue;
+                        if (existing.Contains(h) || _baseIndex.ContainsKey(h) || _frameworkFiles.Contains(h) || _xlPaths.Contains(h)) anyFound = true;
+                        else miss.Add(imp);
                     }
+                    // An icon atlas has a texture slot per screen resolution, and mods only need the first: item
+                    // templates leave the others blank or pointing at the template's icons. So an atlas's missing
+                    // textures count only when none of its textures exist (a replaced atlas keeps the game's own).
+                    if (!(a.Class == "inkTextureAtlas" && (anyFound || a.OverridesBase))) a.MissingImports.AddRange(miss);
+                }
                 if (a.MissingImports.Count > 0)
                     a.Flags.Add($"references {a.MissingImports.Count} missing file(s): {string.Join(", ", a.MissingImports.Take(3))}{(a.MissingImports.Count > 3 ? ", ..." : "")}");
 

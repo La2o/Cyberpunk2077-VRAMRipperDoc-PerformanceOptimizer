@@ -118,7 +118,6 @@ public static class Fixtures
                 Encoding.UTF8.GetBytes(to).CopyTo(head, at);
                 return to;
             }
-            static string Typo(string s, char ch) { var a = s.ToCharArray(); a[^5] = ch; return new string(a); }
             var inBundle = Patch(hard[0], s => Typo(s, 'z'));
             var linked = Patch(hard[1], s => Typo(s, 'y'));
             var messy = Patch(hard[2], s => { var a = s.ToCharArray(); a[0] = '\\'; a[s.IndexOf('\\', 1) + 1] = '/'; return new string(a); });
@@ -135,6 +134,59 @@ public static class Fixtures
             bundle.Write(Path.Combine(outRoot, "_mo2", "mods", "TestFramework", "red4ext", "plugins", "ArchiveXL", "Bundle", "TestBundle.archive"));
             Console.WriteLine($"framework refs: bundle {inBundle} | link {linked} | messy {messy}");
             break;
+        }
+
+        // References that point at no file on purpose (v0.5.2 called them missing): a new mesh with one hard reference
+        // left empty and one set to "none".
+        foreach (var e in src.Entries)
+        {
+            var head0 = src.ReadSegment(src.Segments[(int)e.SegmentsStart]);
+            if (head0 == null || head0[0] != 'C') continue;
+            Cr2wFile c;
+            try { c = new Cr2wFile(head0); } catch { continue; }
+            if (c.RootClass != "CMesh") continue;
+            var hard = HardImports(c).Take(2).ToList();
+            if (hard.Count < 2) continue;
+            var head = (byte[])head0.Clone();
+            PatchImport(head, c.Imports[hard[0]], "");
+            PatchImport(head, c.Imports[hard[1]], "none");
+            var bl = new ArchiveWriter(); bl.Add(Rewritten(src, e, head, Fnv1a64.Hash(@"mymod\meshes\blank_refs.mesh")));
+            bl.Write(Path.Combine(modDir, "#BlankRefs.archive"));
+            break;
+        }
+
+        // Icon atlases have a texture slot per screen resolution; mods fill the first, templates leave the others
+        // pointing at template icons. A new atlas with a spare slot pointing nowhere is fine (v0.5.2 called it missing);
+        // a new atlas none of whose textures exist is still reported.
+        foreach (var name in new[] { "basegame_2_mainmenu", "basegame_1_engine", "basegame_4_gamedata" })
+        {
+            using var ui = new RdarArchive(Path.Combine(game, "archive", "pc", "content", name + ".archive"));
+            var uiHashes = new HashSet<ulong>(ui.Entries.Select(x => x.Hash));
+            bool done = false;
+            foreach (var e in ui.Entries)
+            {
+                var head0 = ui.ReadSegment(ui.Segments[(int)e.SegmentsStart]);
+                if (head0 == null || head0[0] != 'C') continue;
+                Cr2wFile c;
+                try { c = new Cr2wFile(head0); } catch { continue; }
+                if (c.RootClass != "inkTextureAtlas") continue;
+                // The game's own atlases mark their textures soft; atlases made from the item templates mark them
+                // hard (that's how 0.5.2 came to report them), so these copies do too.
+                var tex = Enumerable.Range(0, c.Imports.Count).Where(i => c.Imports[i].EndsWith(".xbm") && c.Imports.Count(x => x == c.Imports[i]) == 1).ToList();
+                if (tex.Count < 2 || !tex.All(i => uiHashes.Contains(Fnv1a64.Hash(c.Imports[i])))) continue;
+                var spare = (byte[])head0.Clone(); MakeImportsHard(spare);
+                foreach (var i in tex.Skip(1)) PatchImport(spare, c.Imports[i], Typo(c.Imports[i], 'q'));
+                var none = (byte[])head0.Clone(); MakeImportsHard(none);
+                foreach (var i in tex) PatchImport(none, c.Imports[i], Typo(c.Imports[i], 'q'));
+                var ia = new ArchiveWriter();
+                ia.Add(Rewritten(ui, e, spare, Fnv1a64.Hash(@"mymod\icons\atlas_spare_slots.inkatlas")));
+                ia.Add(Rewritten(ui, e, none, Fnv1a64.Hash(@"mymod\icons\atlas_no_texture.inkatlas")));
+                ia.Write(Path.Combine(modDir, "#IconAtlas.archive"));
+                Console.WriteLine($"icon atlas from {name}: {tex.Count} textures, spare slots point nowhere / none exist");
+                done = true;
+                break;
+            }
+            if (done) break;
         }
 
         // Vortex deployment manifest + an MO2 instance, as those managers write them.
@@ -159,6 +211,39 @@ public static class Fixtures
         rm.Write(Path.Combine(outRoot, "mods", "TestRedmod", "archives", "TestRedmod.archive"));
         Console.WriteLine($"fixtures written to {outRoot}");
         return 0;
+    }
+
+    // Clears the "soft" flag on every reference (import table: header table 2; entries of u32 path, u16 class, u16 flags).
+    static void MakeImportsHard(byte[] head)
+    {
+        uint off = BitConverter.ToUInt32(head, 64), count = BitConverter.ToUInt32(head, 68);
+        for (int i = 0; i < count; i++) head[off + i * 8 + 6] &= unchecked((byte)~4);
+    }
+
+    static string Typo(string s, char ch) { var a = s.ToCharArray(); a[^5] = ch; return new string(a); }
+
+    // Hard references with a real-looking path, each named once (so patching one string changes one reference).
+    static IEnumerable<int> HardImports(Cr2wFile c) => Enumerable.Range(0, c.Imports.Count).Where(i => (c.ImportFlags[i] & (4 | 8 | 16)) == 0
+        && c.Imports[i].Length > 12 && c.Imports[i].IndexOf('\\', 1) > 0 && c.Imports.Count(x => x == c.Imports[i]) == 1);
+
+    // Rewrites a reference's path in place; the new one may be shorter (the rest of the old string stays as padding).
+    static void PatchImport(byte[] head, string from, string to)
+    {
+        int at = head.AsSpan().IndexOf(Encoding.UTF8.GetBytes(from + "\0"));
+        var bytes = Encoding.UTF8.GetBytes(to + "\0");
+        if (at < 0 || bytes.Length > from.Length + 1) throw new InvalidOperationException("can't patch " + from);
+        bytes.CopyTo(head, at);
+    }
+
+    // A file with a changed header and its original buffers, stored under the given path hash.
+    static WriteEntry Rewritten(RdarArchive src, ArchiveEntry e, byte[] head, ulong hash)
+    {
+        TextureShrinker.Rechecksum(head);
+        var segs = src.SegmentsOf(e).ToList();
+        var raw = new List<(byte[], uint)> { (Oodle.CompressKark(head)!, (uint)head.Length) };
+        raw.AddRange(segs.Skip(1).Select(s => (src.ReadRaw(s), s.Size)));
+        return new WriteEntry(hash, e.Timestamp, e.NumInlineBufferSegments, raw, Array.Empty<ulong>(),
+            ArchiveWriter.FileSha1(head, segs.Skip(1).Select(s => src.ReadRaw(s))));
     }
 }
 
