@@ -93,7 +93,21 @@ public sealed class GuiServer
                 {
                     Request? req;
                     try { req = Read(reader); }
-                    catch (HttpError e) { Send(stream, e.Status, GuiSession.Error(e.Status, e.Message).Body, "application/json; charset=utf-8", keepAlive: false); return; }
+                    catch (HttpError e)
+                    {
+                        Send(stream, e.Status, GuiSession.Error(e.Status, e.Message).Body, "application/json; charset=utf-8", keepAlive: false);
+                        // The client may still be sending the body we refused: read it away for a moment, so it gets
+                        // this answer instead of a reset connection.
+                        try
+                        {
+                            client.Client.Shutdown(SocketShutdown.Send);
+                            stream.ReadTimeout = 2000;
+                            var sink = new byte[64 << 10];
+                            for (long left = 4L << 20; left > 0;) { int n = stream.Read(sink, 0, sink.Length); if (n <= 0) break; left -= n; }
+                        }
+                        catch { }
+                        return;
+                    }
                     if (req == null || !Handle(client, stream, req) || !req.KeepAlive) return;
                 }
             }

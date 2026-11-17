@@ -52,6 +52,12 @@ Fixed in v0.2.7, please update. Older versions accidentally loaded the game's mo
 [b]I installed it with Vortex, but the tools\VRAM RipperDoc folder is empty or missing.[/b]
 Vortex puts tools like this into its staging folder first and only copies them to the game when the mod is [b]enabled[/b]. Enable it in Vortex's mod list (after clicking [i]Yes, Install To Staging Anyway[/i] on the "Fallback Installer" message). Or skip Vortex: download manually and extract the zip anywhere.
 
+[b]The report says a mod has missing files, but it works fine in game.[/b]
+Up to v0.5.0 some files the game does find were reported as missing: files that ArchiveXL (or another RED4ext plugin) brings in its own folder, paths ArchiveXL creates with resource links and copies, and paths written with extra slashes. Since v0.5.1 these count as present. If a mod still shows missing files, the report lists their names: usually a requirement or an optional part isn't installed. If you're sure it is, post the names in the comments.
+
+[b]The mod list is too narrow, or I have to scroll sideways.[/b]
+Since v0.5.1 the report and the app use more of the window, wrap long mod names, and hide the minor columns on small screens. Tick [i]Wide view[/i] above the mod list to use the whole width; it's remembered.
+
 [b]A shortcut says "VramRipperdoc.exe is missing" or "... is not recognized as an internal or external command".[/b]
 Your antivirus most likely removed the exe (new tools without a paid code-signing certificate get flagged sometimes). Open Windows Security, [i]Virus & threat protection[/i], [i]Protection history[/i], find VramRipperdoc.exe and choose [i]Restore[/i] or [i]Allow on device[/i]. If it isn't listed, download the zip again and unpack all of it. Since v0.3.1 the exe is no longer packed, which antivirus programs flag less often.
 

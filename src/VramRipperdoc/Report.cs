@@ -194,19 +194,20 @@ public static class Report
 :root{--bg:#0b0d12;--panel:#141821;--line:#262c3a;--fg:#e6e8ee;--dim:#8b93a7;--acc:#fcee0a;--hot:#ff4d6d;--ok:#3ddc97;--cy:#2de2e6}
 @media (prefers-color-scheme: light){:root:not([data-theme=dark]){--bg:#f6f7f9;--panel:#fff;--line:#dde1e8;--fg:#14161c;--dim:#5b6375;--acc:#8a7d00;--hot:#c8102e;--ok:#0a8a5a;--cy:#007c80}}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.45 system-ui,Segoe UI,sans-serif}
-main{max-width:1200px;margin:0 auto;padding:24px 16px 64px}a{color:var(--cy)}
+main{max-width:1440px;margin:0 auto;padding:24px 16px 64px}body.wide main{max-width:none}a{color:var(--cy)}
 h1{font-size:22px;margin:0 0 4px;letter-spacing:.5px}h1 b{color:var(--acc)}.sub{color:var(--dim);margin:0 0 20px}
 .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;margin-bottom:20px}
 .card{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:12px}.card .k{color:var(--dim);font-size:12px;text-transform:uppercase;letter-spacing:.06em}.card .v{font-size:22px;font-weight:600;margin-top:4px;font-variant-numeric:tabular-nums}
 .panel{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:14px;margin-bottom:20px;overflow-x:auto}
 h2{font-size:15px;margin:0 0 10px}table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}
 th,td{padding:7px 8px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap}th{color:var(--dim);font-weight:500;cursor:pointer;user-select:none;font-size:12px}
-th:first-child,td:first-child,td.l,th.l{text-align:left}tr.mod{cursor:pointer}tr.mod:hover{background:color-mix(in srgb,var(--acc) 8%,transparent)}
+th:first-child,td:first-child,td.l,th.l{text-align:left}td.l{white-space:normal;overflow-wrap:anywhere}tr.mod>td.l{min-width:200px}tr.mod{cursor:pointer}tr.mod:hover{background:color-mix(in srgb,var(--acc) 8%,transparent)}
 .bar{height:6px;background:var(--line);border-radius:3px;min-width:80px}.bar i{display:block;height:100%;background:var(--acc);border-radius:3px}
 .tag{display:inline-block;font-size:11px;padding:1px 6px;border-radius:10px;border:1px solid var(--hot);color:var(--hot);margin:1px 4px 1px 0;white-space:nowrap}
 .tag.dead{border-color:var(--dim);color:var(--dim)}.neg{color:var(--ok)}.hot{color:var(--hot)}
 tr.detail td{background:var(--bg);text-align:left;white-space:normal}tr.detail table td{font-size:12.5px}
-.name{max-width:520px;overflow:hidden;text-overflow:ellipsis;font-family:ui-monospace,Consolas,monospace;font-size:12px}
+.name{min-width:160px;max-width:560px;overflow-wrap:anywhere;font-family:ui-monospace,Consolas,monospace;font-size:12px}
+@media (max-width:1250px){.opt{display:none}}
 .ok{color:var(--ok)}.warn{color:var(--hot)}.note{color:var(--dim);font-size:12.5px}
 input{background:var(--bg);color:var(--fg);border:1px solid var(--line);border-radius:6px;padding:6px 8px;width:100%;max-width:340px;margin:0 10px 10px 0}
 button{background:var(--bg);color:var(--fg);border:1px solid var(--line);border-radius:6px;padding:6px 10px;cursor:pointer;font:inherit}button:hover{border-color:var(--acc)}
@@ -218,7 +219,7 @@ pre{white-space:pre-wrap;font:12px ui-monospace,Consolas,monospace;color:var(--d
 <div class="panel" id="budget"></div>
 <div class="panel" id="hist" hidden></div>
 <div class="panel"><h2>Your mods, heaviest first</h2>
-<div class="tools"><input id="q" placeholder="Filter mods or files..."><label class="note"><input type="checkbox" id="grp" style="width:auto;margin:0 4px 0 0">Group by installed mod</label><button id="copy">Copy summary for a support post</button></div>
+<div class="tools"><input id="q" placeholder="Filter mods or files..."><label class="note"><input type="checkbox" id="grp" style="width:auto;margin:0 4px 0 0">Group by installed mod</label><label class="note" title="Use the whole window width"><input type="checkbox" id="wide" style="width:auto;margin:0 4px 0 0">Wide view</label><button id="copy">Copy summary for a support post</button></div>
 <table id="mods"></table>
 <p class="note"><b>Normal play</b> = extra VRAM because the mod replaces game files (loaded whenever those things are on screen). <b>When used</b> = new clothing, cars, weapons or props, which only take VRAM while you wear, drive or spawn them, so these never all load at once. <b>When used comes on top of Normal play</b> (it is not instead of it). A <b>negative</b> Normal play means the mod makes the game lighter than vanilla, for example smaller textures or removed objects. Only what goes to the graphics card counts (textures, models, morph targets, masks); animations such as lipsync, appearance and world data load into system RAM, so they're shown as other data instead. Both are estimates from the files; double-click <i>3 - Measure VRAM in game</i> for real numbers. Click a row to see its heaviest files.</p></div>
 </main><script>
@@ -243,7 +244,7 @@ bh+=`<p class="note">New items add up to ${sz(B.whenUsed)} if every one of them 
 if(B.steps.length)bh+=`<details><summary class="note">Show the ${B.steps.length} texture(s) the fix would halve</summary><table><tr><th class="l">Mod</th><th class="l">File</th><th class="l">Type</th><th>Now</th><th>After</th><th>Saves</th></tr>`+B.steps.slice(0,60).map(s=>`<tr><td class="l">${esc(s.mod)}</td><td class="l name" title="${esc(s.asset)}">${esc(s.asset)}</td><td class="l">${s.always?'normal play':'new item'}</td><td>${s.from}px</td><td>${s.to}px</td><td>${sz(s.saves)}</td></tr>`).join('')+'</table>'+(B.steps.length>60?`<p class="note">+${B.steps.length-60} more in the JSON report</p>`:'')+'</details>';
 $('#budget').innerHTML=bh+`<p class="note">How the room for mods is worked out: ${esc(B.why)}.</p>`;
 if(D.history.length||D.managerNotes.length){$('#hist').hidden=false;$('#hist').innerHTML=`<h2>Changes &amp; sources</h2><pre>${esc([...D.managerNotes,...D.history].join('\n'))}</pre>`;}
-const cols=[['priority','#'],['name','Mod archive','l'],['always','Normal play'],['bar',''],['whenUsed','+ When used'],['textures','Tex'],['meshes','Mesh'],['tris','Tris LOD0'],['overrides','Overrides'],['shadowed','Never loads'],['missing','Missing'],['flagged','Flags']];
+const cols=[['priority','#'],['name','Mod archive','l'],['always','Normal play'],['bar',''],['whenUsed','+ When used'],['textures','Tex'],['meshes','Mesh'],['tris','Tris LOD0','opt'],['overrides','Overrides','opt'],['shadowed','Never loads','opt'],['missing','Missing'],['flagged','Flags']];
 let sortK='always',sortD=-1,open=new Set();
 function groups(){const g=new Map();for(const m of D.mods){const k=m.package||m.name;if(!g.has(k))g.set(k,{name:k,package:m.package,nexusId:m.nexusId,manager:m.manager,priority:m.priority,source:m.source,disk:0,delta:0,always:0,whenUsed:0,textures:0,meshes:0,tris:0,overrides:0,shadowed:0,missing:0,flagged:0,ram:0,assets:[],archives:[]});
  const x=g.get(k);for(const f of['disk','delta','always','whenUsed','textures','meshes','tris','overrides','shadowed','missing','flagged','ram'])x[f]+=m[f]||0;x.assets.push(...m.assets);x.archives.push(m.name);if(m.error)x.error=m.error;}
@@ -253,7 +254,7 @@ function render(){const q=$('#q').value.toLowerCase(),list=$('#grp').checked?gro
  let h='<tr>'+cols.map(([k,t,c])=>`<th class="${c||''}" data-k="${k}">${t}${sortK===k?(sortD<0?' ▾':' ▴'):''}</th>`).join('')+'</tr>';
  for(const m of rows){const link=m.nexusId?` · <a href="https://www.nexusmods.com/cyberpunk2077/mods/${m.nexusId}" target="_blank" rel="noopener">Nexus #${m.nexusId}</a>`:'';
   const pkg=m.package&&m.package!==m.name&&!(m.source||"").includes(m.package)?` · ${esc(m.manager||'')}: ${esc(m.package)}`:'';
-  h+=`<tr class="mod" data-n="${esc(m.name)}"><td>${m.priority}</td><td class="l">${esc(m.name)}${m.error?` <span class="tag">${esc(m.error)}</span>`:''}<div class="note">${esc(m.source)} · ${sz(m.disk)} on disk${m.archives?` · ${m.archives.length} archive(s)`:pkg}${link}${m.community?` · ${esc(m.community)}`:''}${m.ram>=50*2**20?` · ${sz(m.ram)} other data (system RAM, not VRAM)`:''}</div></td><td class="${m.always<0?'neg':m.always>2**30?'hot':''}">${sz(m.always)}</td><td><div class="bar"><i style="width:${Math.max(0,m.always)/max*100}%"></i></div></td><td class="note">${sz(m.whenUsed)}</td><td>${m.textures}</td><td>${m.meshes}</td><td>${m.tris.toLocaleString()}</td><td>${m.overrides}</td><td>${m.shadowed}</td><td class="${m.missing?'hot':''}">${m.missing}</td><td class="${m.flagged?'hot':''}">${m.flagged}</td></tr>`;
+  h+=`<tr class="mod" data-n="${esc(m.name)}"><td>${m.priority}</td><td class="l">${esc(m.name)}${m.error?` <span class="tag">${esc(m.error)}</span>`:''}<div class="note">${esc(m.source)} · ${sz(m.disk)} on disk${m.archives?` · ${m.archives.length} archive(s)`:pkg}${link}${m.community?` · ${esc(m.community)}`:''}${m.ram>=50*2**20?` · ${sz(m.ram)} other data (system RAM, not VRAM)`:''}</div></td><td class="${m.always<0?'neg':m.always>2**30?'hot':''}">${sz(m.always)}</td><td><div class="bar"><i style="width:${Math.max(0,m.always)/max*100}%"></i></div></td><td class="note">${sz(m.whenUsed)}</td><td>${m.textures}</td><td>${m.meshes}</td><td class="opt">${m.tris.toLocaleString()}</td><td class="opt">${m.overrides}</td><td class="opt">${m.shadowed}</td><td class="${m.missing?'hot':''}">${m.missing}</td><td class="${m.flagged?'hot':''}">${m.flagged}</td></tr>`;
   if(open.has(m.name)){h+=`<tr class="detail"><td colspan="${cols.length}"><table><tr><th class="l">File</th><th class="l">Kind</th><th>Size</th><th>GPU</th><th>+VRAM</th><th class="l">Notes</th></tr>`+
    m.assets.slice(0,60).map(a=>`<tr><td class="l name" title="${esc(a.name)}">${esc(a.name)}</td><td class="l">${esc(a.class||a.kind)}</td><td>${a.kind==='Texture'?`${a.w}×${a.h} ${a.mips}mip ${esc((a.fmt||'').replace('TCM_',''))}`:a.kind==='Mesh'?`${a.tris.toLocaleString()} tris · ${a.lods} LOD`:''}</td><td>${sz(a.gpu)}</td><td class="${a.delta<0?'neg':''}">${sz(a.delta)}</td><td class="l">${a.gpu===0&&a.ram>0?`<span class="tag dead">${sz(a.ram)} in system RAM, not VRAM</span>`:''}${a.override?'<span class="tag dead">replaces a game file</span>':a.always?'<span class="tag dead">used by a replaced file</span>':'<span class="tag dead">new item</span>'}${a.flags.map(f=>`<span class="tag ${a.shadowedBy?'dead':''}">${esc(f)}</span>`).join('')}</td></tr>`).join('')+
    `</table>${m.assets.length>60?`<p class="note">${m.assets.length-60} more in the JSON report</p>`:''}</td></tr>`;}}
@@ -262,6 +263,10 @@ function render(){const q=$('#q').value.toLowerCase(),list=$('#grp').checked?gro
 $('#mods').addEventListener('click',e=>{if(e.target.closest('a'))return;const th=e.target.closest('th[data-k]');if(th&&!th.closest('tr.detail')){const k=th.dataset.k==='bar'?'always':th.dataset.k;sortD=sortK===k?-sortD:-1;sortK=k;return render();}
  const tr=e.target.closest('tr.mod');if(tr){const n=tr.dataset.n;open.has(n)?open.delete(n):open.add(n);render();}});
 $('#q').addEventListener('input',render);$('#grp').addEventListener('change',()=>{open.clear();render();});
+// Wide view: the whole window width (remembered in this browser); narrow windows hide the minor columns instead.
+const setWide=on=>{document.body.classList.toggle('wide',on);$('#wide').checked=on;try{localStorage.setItem('ripperdoc-wide',on?'1':'')}catch{}};
+try{setWide(localStorage.getItem('ripperdoc-wide')==='1')}catch{}
+$('#wide').addEventListener('change',e=>setWide(e.target.checked));
 $('#copy').addEventListener('click',async()=>{try{await navigator.clipboard.writeText(D.summary);$('#copy').textContent='Copied ✓';}catch{prompt('Copy this summary:',D.summary);}});
 render();
 </script></body></html>

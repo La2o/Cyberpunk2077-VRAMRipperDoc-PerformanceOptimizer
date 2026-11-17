@@ -94,6 +94,49 @@ public static class Fixtures
             rp.Write(Path.Combine(outRoot, "retexture", "archive", "pc", "mod", "RetexturePack.archive"));
         }
 
+        // Three references the game resolves although no mod archive has the file (v0.5.0 called them missing): a file
+        // only a RED4ext plugin's bundle has (ArchiveXL's Bundle folder, installed as an MO2 mod here), a path an .xl
+        // file creates with "resource: link", and a path written with a leading slash and a doubled one.
+        var tiny = small.Count > 0 ? small[0] : big[0];
+        foreach (var e in src.Entries)
+        {
+            if (e.Hash == meshWithTex?.Hash || meshes.Contains(e)) continue;
+            var segs = src.SegmentsOf(e).ToList();
+            var head0 = src.ReadSegment(segs[0]);
+            if (head0 == null || head0[0] != 'C') continue;
+            Cr2wFile c;
+            try { c = new Cr2wFile(head0); } catch { continue; }
+            if (c.RootClass != "CMesh") continue;
+            var hard = Enumerable.Range(0, c.Imports.Count).Where(i => (c.ImportFlags[i] & (4 | 8 | 16)) == 0 && c.Imports[i].Length > 12
+                && c.Imports[i].IndexOf('\\', 1) > 0 && c.Imports.Count(x => x == c.Imports[i]) == 1).Take(3).ToList();
+            if (hard.Count < 3) continue;
+            var head = (byte[])head0.Clone();
+            string Patch(int i, Func<string, string> change)
+            {
+                var from = c.Imports[i]; var to = change(from);
+                int at = head.AsSpan().IndexOf(Encoding.UTF8.GetBytes(from + "\0"));
+                Encoding.UTF8.GetBytes(to).CopyTo(head, at);
+                return to;
+            }
+            static string Typo(string s, char ch) { var a = s.ToCharArray(); a[^5] = ch; return new string(a); }
+            var inBundle = Patch(hard[0], s => Typo(s, 'z'));
+            var linked = Patch(hard[1], s => Typo(s, 'y'));
+            var messy = Patch(hard[2], s => { var a = s.ToCharArray(); a[0] = '\\'; a[s.IndexOf('\\', 1) + 1] = '/'; return new string(a); });
+            TextureShrinker.Rechecksum(head);
+            var raw = new List<(byte[], uint)> { (Oodle.CompressKark(head)!, (uint)head.Length) };
+            raw.AddRange(segs.Skip(1).Select(s => (src.ReadRaw(s), s.Size)));
+            var fw = new ArchiveWriter();
+            fw.Add(new WriteEntry(e.Hash, e.Timestamp, e.NumInlineBufferSegments, raw, Array.Empty<ulong>(),
+                ArchiveWriter.FileSha1(head, segs.Skip(1).Select(s => src.ReadRaw(s)))));
+            fw.Add(src, tiny, Fnv1a64.Hash(messy)); // the file the messy path means, as the game cleans it up
+            fw.Write(Path.Combine(modDir, "#FrameworkRefs.archive"));
+            File.WriteAllText(Path.Combine(modDir, "#FrameworkRefs.archive.xl"), $"resource:\n  link:\n    {c.Imports[hard[1]]}:\n      - {linked}\n");
+            var bundle = new ArchiveWriter(); bundle.Add(src, tiny, Fnv1a64.Hash(inBundle));
+            bundle.Write(Path.Combine(outRoot, "_mo2", "mods", "TestFramework", "red4ext", "plugins", "ArchiveXL", "Bundle", "TestBundle.archive"));
+            Console.WriteLine($"framework refs: bundle {inBundle} | link {linked} | messy {messy}");
+            break;
+        }
+
         // Vortex deployment manifest + an MO2 instance, as those managers write them.
         File.WriteAllText(Path.Combine(outRoot, "vortex.deployment.json"), """
         {"instance":"test","version":1,"deploymentMethod":"hardlink_activator","gameId":"cyberpunk2077","files":[
@@ -104,7 +147,7 @@ public static class Fixtures
         var mo2 = Path.Combine(outRoot, "_mo2");
         Directory.CreateDirectory(Path.Combine(mo2, "profiles", "Default"));
         File.WriteAllText(Path.Combine(mo2, "ModOrganizer.ini"), "[General]\ngameName=Cyberpunk 2077\nselected_profile=@ByteArray(Default)\n");
-        File.WriteAllText(Path.Combine(mo2, "profiles", "Default", "modlist.txt"), "# managed by MO2\n+Better Skies\n-Disabled Mod\n");
+        File.WriteAllText(Path.Combine(mo2, "profiles", "Default", "modlist.txt"), "# managed by MO2\n+Better Skies\n+TestFramework\n-Disabled Mod\n");
         var mo2Mod = Path.Combine(mo2, "mods", "Better Skies");
         var sky = new ArchiveWriter(); foreach (var e in big.Skip(5).Take(2)) sky.Add(src, e, Fnv1a64.Hash($@"skies\t{e.Hash:x}.xbm"));
         sky.Write(Path.Combine(mo2Mod, "archive", "pc", "mod", "BetterSkies.archive"));

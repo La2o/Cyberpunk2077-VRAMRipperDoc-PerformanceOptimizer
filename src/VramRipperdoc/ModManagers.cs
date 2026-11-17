@@ -13,6 +13,8 @@ public sealed class ModManagers
 {
     readonly Dictionary<string, PackageInfo> _byFile = new(StringComparer.OrdinalIgnoreCase);
     public List<ArchiveSource> ExtraArchives { get; } = new();
+    /// <summary>Enabled MO2 mod folders, each laid out like the game folder (.xl files, red4ext plugins...).</summary>
+    public List<string> ExtraRoots { get; } = new();
     public List<string> Notes { get; } = new();
 
     // Vortex staging folders are named "<name>-<nexusId>-<version>-<timestamp>".
@@ -164,6 +166,7 @@ public sealed class ModManagers
             if (!line.StartsWith('+')) continue;
             var mod = line[1..].Trim();
             var dir = Path.Combine(modsDir, mod);
+            if (Directory.Exists(dir)) ExtraRoots.Add(dir);
             var archDir = Path.Combine(dir, "archive", "pc", "mod");
             if (!Directory.Exists(archDir)) continue;
             var meta = Path.Combine(dir, "meta.ini");

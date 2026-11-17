@@ -107,15 +107,32 @@ public sealed class RdarArchive : IDisposable
 
 public static class Fnv1a64
 {
+    /// <summary>
+    /// The game's resource path hash, cleaned up the way the game does it (RED4ext ResourcePath::HashSanitized): an
+    /// opening quote and leading slashes are dropped, repeated slashes count once, '/' is '\', only A-Z are lowercased,
+    /// and the path ends at a quote or after 216 bytes. A mod that writes "\base\\x.mesh" still finds "base\x.mesh".
+    /// </summary>
     public static ulong Hash(string path)
     {
+        var s = Encoding.UTF8.GetBytes(path);
+        int i = 0, n = 0;
+        if (i < s.Length && (s[i] == '"' || s[i] == '\'')) i++;
+        while (i < s.Length && (s[i] == '/' || s[i] == '\\')) i++;
         ulong h = 0xCBF29CE484222325;
-        foreach (byte b in Encoding.UTF8.GetBytes(path.ToLowerInvariant().Replace('/', '\\')))
+        while (i < s.Length && s[i] != 0 && s[i] != '"' && s[i] != '\'' && n < 216)
         {
+            byte b = s[i++];
+            if (b == '/' || b == '\\')
+            {
+                b = (byte)'\\';
+                while (i < s.Length && (s[i] == '/' || s[i] == '\\')) i++;
+            }
+            else if (b >= 'A' && b <= 'Z') b += 'a' - 'A';
             h ^= b;
             h *= 0x100000001B3;
+            n++;
         }
-        return h;
+        return n == 0 ? 0 : h;
     }
 }
 

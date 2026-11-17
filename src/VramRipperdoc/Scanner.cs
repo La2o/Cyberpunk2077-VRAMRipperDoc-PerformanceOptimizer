@@ -128,6 +128,11 @@ public sealed class Scanner
     readonly ConcurrentDictionary<ulong, byte> _referenced = new();
     readonly List<RdarArchive> _base = new();
     readonly Dictionary<ulong, (int Archive, int Entry)> _baseIndex = new();
+    /// <summary>Files RED4ext plugins bring in their own folders (ArchiveXL's Bundle): they exist in game, but aren't mods.</summary>
+    readonly HashSet<ulong> _frameworkFiles = new();
+    /// <summary>Paths named in .xl files. ArchiveXL makes some of them exist (resource link and copy targets).</summary>
+    readonly HashSet<ulong> _xlPaths = new();
+    static readonly Regex XlPathRx = new(@"[A-Za-z0-9_\-\.\\/]*[\\/][A-Za-z0-9_\-\.\\/]*\.[A-Za-z0-9_]{2,16}", RegexOptions.Compiled);
 
     public Scanner(ScanOptions o) => _o = o;
     void Log(string s) => _o.Log?.Invoke(s);
@@ -195,6 +200,10 @@ public sealed class Scanner
 
         var managers = ModManagers.Detect(_o.GameDir, modRoot, _o.Mo2Instance, Log);
         res.ManagerNotes = managers.Notes;
+        // Everywhere a mod can put files the game or ArchiveXL reads: the mod folder, the game, and MO2's mod folders.
+        var roots = new[] { modRoot, _o.GameDir }.Concat(managers.ExtraRoots).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        if (_o.CompareVanilla && IndexFrameworkArchives(roots) is var (files, plugins) && files > 0)
+            res.ManagerNotes.Add($"Also checked {files:N0} file(s) that RED4ext plugins bring along ({string.Join(", ", plugins)}), so mods using them don't look incomplete.");
         var order = DiscoverLoadOrder(modRoot, managers.ExtraArchives);
         res.BudgetArchive = BudgetArchive.FindExisting(modRoot);
         Log($"Found {order.Count} mod archive(s)." + (order.Count > 300 ? " Big mod lists take a few minutes; progress is shown below." : ""));
@@ -248,8 +257,8 @@ public sealed class Scanner
                     queue.Enqueue(next);
                 }
 
-        ScanTextReferences(modRoot);
-        var dynamicArchives = ArchivesWithDynamicXl(modRoot);
+        ScanTextReferences(roots);
+        var dynamicArchives = ArchivesWithDynamicXl(roots);
         var existing = new HashSet<ulong>(winner.Keys);
         var bySha = new Dictionary<string, (ModReport Mod, AssetInfo Asset)>();
 
@@ -261,12 +270,14 @@ public sealed class Scanner
                 AddFlags(a);
 
                 // Hard references that point nowhere (only ones the mod added, so vanilla's own dead links don't count).
+                // A file exists when a mod, the game or a plugin's bundle has it, or when an .xl file creates it.
                 if (_o.CompareVanilla)
                     foreach (var imp in a.NewImports)
                     {
                         if (imp.IndexOfAny(new[] { '*', '{', '}', '$', '%' }) >= 0) continue;
                         var h = Fnv1a64.Hash(imp);
-                        if (!existing.Contains(h) && !_baseIndex.ContainsKey(h)) a.MissingImports.Add(imp);
+                        if (!existing.Contains(h) && !_baseIndex.ContainsKey(h) && !_frameworkFiles.Contains(h) && !_xlPaths.Contains(h))
+                            a.MissingImports.Add(imp);
                     }
                 if (a.MissingImports.Count > 0)
                     a.Flags.Add($"references {a.MissingImports.Count} missing file(s): {string.Join(", ", a.MissingImports.Take(3))}{(a.MissingImports.Count > 3 ? ", ..." : "")}");
@@ -298,8 +309,13 @@ public sealed class Scanner
 
     int LoadBaseIndex()
     {
-        var dirs = new[] { "content", "ep1" }.Select(d => System.IO.Path.Combine(_o.GameDir, "archive", "pc", d)).Where(Directory.Exists);
-        foreach (var f in dirs.SelectMany(d => Directory.GetFiles(d, "*.archive")).OrderBy(f => f, StringComparer.Ordinal))
+        // The game's own folders: content and ep1 (Phantom Liberty) first, then any other one a game update adds.
+        var pc = System.IO.Path.Combine(_o.GameDir, "archive", "pc");
+        var dirs = (Directory.Exists(pc) ? Directory.GetDirectories(pc) : Array.Empty<string>())
+            .Where(d => !System.IO.Path.GetFileName(d).Equals("mod", StringComparison.OrdinalIgnoreCase))
+            .OrderBy(d => System.IO.Path.GetFileName(d).ToLowerInvariant() switch { "content" => 0, "ep1" => 1, _ => 2 })
+            .ThenBy(d => d, StringComparer.Ordinal);
+        foreach (var f in dirs.SelectMany(d => Directory.GetFiles(d, "*.archive").OrderBy(f => f, StringComparer.Ordinal)))
         {
             try
             {
@@ -327,22 +343,60 @@ public sealed class Scanner
         Log($"Loaded {n:N0} names from hash list.");
     }
 
-    /// <summary>Paths named in ArchiveXL (.xl), TweakXL (.yaml/.tweak) and CET (.lua) files count as references.</summary>
-    void ScanTextReferences(string root)
+    /// <summary>
+    /// Archives RED4ext plugins keep in their own folder: ArchiveXL loads its Bundle folder, and its API lets other
+    /// plugins add theirs. Their files exist in game, so a mod pointing at them isn't missing anything.
+    /// </summary>
+    (int Files, List<string> Plugins) IndexFrameworkArchives(IEnumerable<string> roots)
     {
-        var places = new (string Dir, string[] Patterns)[]
+        var plugins = new SortedSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var root in roots)
         {
-            (System.IO.Path.Combine(root, "archive", "pc", "mod"), new[] { "*.xl" }),
-            (System.IO.Path.Combine(root, "mods"), new[] { "*.xl", "*.yaml", "*.yml", "*.tweak" }),
-            (System.IO.Path.Combine(root, "r6", "tweaks"), new[] { "*.yaml", "*.yml", "*.tweak" }),
-            (System.IO.Path.Combine(root, "bin", "x64", "plugins", "cyber_engine_tweaks", "mods"), new[] { "*.lua" }),
-        };
-        foreach (var (dir, patterns) in places)
-        {
+            var dir = System.IO.Path.Combine(root, "red4ext", "plugins");
             if (!Directory.Exists(dir)) continue;
-            foreach (var pat in patterns)
-                foreach (var f in SafeFiles(dir, pat))
-                    try { foreach (Match m in PathRx.Matches(File.ReadAllText(f))) AddReference(m.Value); } catch { }
+            IEnumerable<string> files;
+            try { files = Directory.EnumerateFiles(dir, "*.archive", SearchOption.AllDirectories).ToList(); } catch { continue; }
+            foreach (var f in files)
+                try
+                {
+                    using var a = new RdarArchive(f);
+                    foreach (var e in a.Entries) _frameworkFiles.Add(e.Hash);
+                    plugins.Add(System.IO.Path.GetRelativePath(dir, f).Split(System.IO.Path.DirectorySeparatorChar)[0]);
+                }
+                catch (Exception ex) { Log($"! Skipping plugin archive {System.IO.Path.GetFileName(f)}: {ex.Message}"); }
+        }
+        return (_frameworkFiles.Count, plugins.ToList());
+    }
+
+    /// <summary>
+    /// Paths named in ArchiveXL (.xl), TweakXL (.yaml/.tweak) and CET (.lua) files count as references. Every path an
+    /// .xl file names also counts as existing: resource link and copy targets only exist through ArchiveXL.
+    /// </summary>
+    void ScanTextReferences(IEnumerable<string> roots)
+    {
+        foreach (var root in roots)
+        {
+            var places = new (string Dir, string[] Patterns)[]
+            {
+                (System.IO.Path.Combine(root, "archive", "pc", "mod"), new[] { "*.xl" }),
+                (System.IO.Path.Combine(root, "mods"), new[] { "*.xl", "*.yaml", "*.yml", "*.tweak" }),
+                (System.IO.Path.Combine(root, "red4ext", "plugins"), new[] { "*.xl" }),
+                (System.IO.Path.Combine(root, "r6", "tweaks"), new[] { "*.yaml", "*.yml", "*.tweak" }),
+                (System.IO.Path.Combine(root, "bin", "x64", "plugins", "cyber_engine_tweaks", "mods"), new[] { "*.lua" }),
+            };
+            foreach (var (dir, patterns) in places)
+            {
+                if (!Directory.Exists(dir)) continue;
+                foreach (var pat in patterns)
+                    foreach (var f in SafeFiles(dir, pat))
+                        try
+                        {
+                            var text = File.ReadAllText(f);
+                            foreach (Match m in PathRx.Matches(text)) AddReference(m.Value);
+                            if (pat == "*.xl") foreach (Match m in XlPathRx.Matches(text)) _xlPaths.Add(Fnv1a64.Hash(m.Value));
+                        }
+                        catch { }
+            }
         }
     }
 
@@ -353,19 +407,22 @@ public sealed class Scanner
     }
 
     /// <summary>Archives whose .xl uses substitutions ({gender}, *): their file references can't be resolved statically.</summary>
-    static HashSet<string> ArchivesWithDynamicXl(string root)
+    static HashSet<string> ArchivesWithDynamicXl(IEnumerable<string> roots)
     {
         var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var dir = System.IO.Path.Combine(root, "archive", "pc", "mod");
-        if (!Directory.Exists(dir)) return set;
-        foreach (var xl in Directory.GetFiles(dir, "*.xl"))
-            try
-            {
-                var text = File.ReadAllText(xl);
-                if (text.Contains('{') || text.Contains('*'))
-                    set.Add(System.IO.Path.GetFileNameWithoutExtension(xl).Split('.')[0]);
-            }
-            catch { }
+        foreach (var root in roots)
+        {
+            var dir = System.IO.Path.Combine(root, "archive", "pc", "mod");
+            if (!Directory.Exists(dir)) continue;
+            foreach (var xl in Directory.GetFiles(dir, "*.xl"))
+                try
+                {
+                    var text = File.ReadAllText(xl);
+                    if (text.Contains('{') || text.Contains('*'))
+                        set.Add(System.IO.Path.GetFileNameWithoutExtension(xl).Split('.')[0]);
+                }
+                catch { }
+        }
         return set;
     }
 
