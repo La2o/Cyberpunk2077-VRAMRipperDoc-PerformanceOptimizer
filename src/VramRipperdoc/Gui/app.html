@@ -56,6 +56,7 @@ fieldset{border:0;padding:0;margin:0}legend{font-weight:600;margin-bottom:6px;pa
 .spin{display:inline-block;width:12px;height:12px;border:2px solid var(--line);border-top-color:var(--acc);border-radius:50%;animation:rot 1s linear infinite;vertical-align:-1px;margin-right:6px}
 @keyframes rot{to{transform:rotate(360deg)}}
 .probs{list-style:none;margin:0;padding:0}.probs li{padding:8px 0;border-top:1px solid var(--line)}.probs li:first-child{border-top:0;padding-top:0}
+.fold>summary{display:inline-block;color:var(--cy);cursor:pointer;padding:6px 0 0}.fold>summary::before{content:'\25B8  '}.fold[open]>summary::before{content:'\25BE  '}.fold>.probs{margin-top:8px;padding-left:14px;border-left:2px solid var(--line)}
 .tag{display:inline-block;font-size:11px;padding:1px 6px;border-radius:10px;border:1px solid var(--hot);color:var(--hot);margin:1px 4px 1px 0}
 .tag.dead{border-color:var(--dim);color:var(--dim)}
 .confirm{background:var(--warnbg);border:1px solid var(--acc);border-radius:8px;padding:10px 12px;margin:8px 0;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
@@ -130,13 +131,13 @@ const fmtLeft=s=>s<10?'a few seconds':s<90?'about '+Math.round(s)+' seconds':'ab
 const fmtDate=s=>{const d=new Date(s);return isNaN(d)?String(s||''):d.toLocaleString()};
 
 // ---- state ----
-let S=null,ui={sortK:'always',sortD:-1,open:new Set(),q:'',grp:false,notes:[],undo:false,dismissed:null,liveErr:'',liveLabel:null,dlgUpdate:null};
+let S=null,ui={sortK:'always',sortD:-1,open:new Set(),fold:{},q:'',grp:false,notes:[],undo:false,dismissed:null,liveErr:'',liveLabel:null,dlgUpdate:null};
 const wine=()=>S&&S.platform==='wine';
 const busy=()=>!!(S&&S.busy);
 const keyOf=m=>m.package||m.name;
 // Wide view: the whole window width. A cookie, because the page's address (its port) changes every start; cookies don't care.
-const wideOn=()=>/(?:^|; )ripperdoc_wide=1/.test(document.cookie);
-function setWide(on){document.cookie='ripperdoc_wide='+(on?'1':'0')+'; max-age=31536000; path=/; SameSite=Strict';document.body.classList.toggle('wide',on)}
+const wideOn=()=>{try{return/(?:^|; )ripperdoc_wide=1/.test(document.cookie)}catch{return document.body.classList.contains('wide')}};
+function setWide(on){try{document.cookie='ripperdoc_wide='+(on?'1':'0')+'; max-age=31536000; path=/; SameSite=Strict'}catch{}document.body.classList.toggle('wide',on)}
 
 async function api(method,path,body){
  if(DEMO)return Demo.api(method,path,body);
@@ -275,19 +276,35 @@ function cards(R){
   c('Flagged files',flagged.toLocaleString()),c('Missing references',miss.toLocaleString(),null,miss?'hot':''),
   c('Dead weight (never loads)',sz(dead)),c('Other data (system RAM, not VRAM)',sz(R.ramBytes||0)));}
 
+// A kind of problem with more than 3 entries gets one line and a folded list, so the mod list isn't 900 entries further down.
+// The list is only built when opened; whether it is open is kept while the app runs.
 function problems(R){
- const li=[],F=R.budgetFix;
- for(const m of R.mods)if(m.error)li.push(h('li',null,b('Broken archive: '),h('span',{class:'mono'},m.name),p('note','The game can\'t read it ('+m.error+'). Reinstall or remove this mod.')));
- for(const m of R.mods)if(m.missing>0){const names=[...new Set(m.assets.flatMap(a=>a.missing||[]))];
-  li.push(h('li',null,b('Missing files: '),h('span',{class:'mono'},m.name),' needs '+m.missing+' file(s) that are not installed',
-   names.length?h('div',{class:'note'},names.slice(0,6).map(n=>h('code',{style:'margin-right:8px'},n)),names.length>6?'and '+(names.length-6)+' more':null):null,
-   p('note','Usually a requirement of this mod is missing: check its mod page.')));}
- if(F&&F.stale)li.push(h('li',null,b('The budget fix is out of date: '),F.why,p('note','It still shows old copies of those textures. Rebuild it, or remove it.'),
+ const li=[],F=R.budgetFix;let n=0;
+ const fold=(key,head,items)=>{n+=items.length;
+  if(items.length<=3){for(const f of items)li.push(f(false));return}
+  let built=false;const d=h('details',{class:'fold'},h('summary',{'data-fid':'fold:'+key},'Show the list ('+items.length.toLocaleString()+')'));
+  const build=()=>{if(!built){built=true;d.append(h('ul',{class:'probs'},items.map(f=>f(true))))}};
+  d.addEventListener('toggle',()=>{ui.fold[key]=d.open;if(d.open)build()});
+  if(ui.fold[key]){d.open=true;build()}
+  li.push(h('li',null,head,d))};
+ const one=x=>{n++;li.push(x)};
+ if(F&&F.stale)one(h('li',null,b('The budget fix is out of date: '),F.why,p('note','It still shows old copies of those textures. Rebuild it, or remove it.'),
   h('div',{class:'row'},h('button',{class:'primary small',onclick:openFix,disabled:busy()},'Rebuild the budget fix...'),h('button',{class:'small',onclick:()=>{ui.undo=true;renderActions();window.scrollTo(0,0)}},'Undo budget fix')),
   (F.changed.length||F.removed.length)?h('details',null,h('summary',{class:'note'},'Which textures'),h('pre',{class:'mono note'},[...F.changed.map(x=>'updated since: '+x),...F.removed.map(x=>'mod removed: '+x)].slice(0,50).join('\n'))):null));
- else if(F&&!F.manifest)li.push(h('li',null,b('Old budget fix: '),'it was made by v0.3.1 or older, which can\'t tell whether your mods changed since. If you updated texture mods, apply the fix again.'));
- if(R.oodle===false)li.push(h('li',null,b('Texture sizes are estimates: '),'the game\'s decompression library was not found, so only file sizes are known.'));
- return li.length?h('div',{class:'panel',style:'border-color:var(--hot)'},h('h2',null,'Problems ('+li.length+')'),h('ul',{class:'probs'},li)):null;}
+ else if(F&&!F.manifest)one(h('li',null,b('Old budget fix: '),'it was made by v0.3.1 or older, which can\'t tell whether your mods changed since. If you updated texture mods, apply the fix again.'));
+ if(R.oodle===false)one(h('li',null,b('Texture sizes are estimates: '),'the game\'s decompression library was not found, so only file sizes are known.'));
+ const missNames=m=>[...new Set(m.assets.flatMap(a=>a.missing||[]))];
+ const broken=R.mods.filter(m=>m.error),miss=R.mods.filter(m=>m.missing>0);
+ const top=(()=>{const c=new Map();for(const m of miss)for(const x of missNames(m))c.set(x,(c.get(x)||0)+1);return[...c].filter(e=>e[1]>1).sort((a,c)=>c[1]-a[1]).slice(0,5)})();
+ fold('broken',[b('Broken archives: '),broken.length.toLocaleString()+' archives can\'t be read by the game. Reinstall or remove those mods.'],
+  broken.map(m=>short=>h('li',null,short?null:b('Broken archive: '),h('span',{class:'mono'},m.name),p('note','The game can\'t read it ('+m.error+').'+(short?'':' Reinstall or remove this mod.')))));
+ fold('missing',[b('Missing files: '),miss.length.toLocaleString()+' mod archives need files that are not installed. Usually a requirement of those mods is missing: check their mod pages. The Missing column in the mod list shows the same mods.',
+   top.length?h('div',{class:'note'},'Most often missing: ',top.map(([x,c])=>h('span',{style:'margin-right:10px'},h('code',null,x),' ('+c.toLocaleString()+' archives)'))):null],
+  miss.map(m=>short=>{const names=missNames(m);
+   return h('li',null,short?null:b('Missing files: '),h('span',{class:'mono'},m.name),' needs '+m.missing+' file(s) that are not installed',
+    names.length?h('div',{class:'note'},names.slice(0,6).map(n=>h('code',{style:'margin-right:8px'},n)),names.length>6?'and '+(names.length-6)+' more':null):null,
+    short?null:p('note','Usually a requirement of this mod is missing: check its mod page.'))}));
+ return li.length?h('div',{class:'panel',style:'border-color:var(--hot)'},h('h2',null,'Problems ('+n.toLocaleString()+')'),h('ul',{class:'probs'},li)):null;}
 
 function budgetPanel(R){
  const B=R.budget,over=B.current>B.budget,steps=B.steps.filter(s=>s.always).length,k=[h('h2',null,'Room for your mods')];
@@ -473,6 +490,11 @@ const Demo=!DEMO?null:(()=>{
  if(name==='stale'){over(st.report);st.fix.found=true;st.report.budgetArchive='VRAM-RipperDoc-BudgetFix.archive';st.report.budgetFix={textures:212,manifest:true,stale:true,why:'2 texture(s) changed since it was made, 1 mod was removed',changed:['HD_Textures: 0x01F4A2C9'],removed:['OldSkin']}}
  if(name==='nogame'){st.game={path:null,found:false}}
  if(name==='nomods'){st.report.mods=[];st.mo2.detected=['C:\\Modding\\MO2']}
+ if(name==='many'){const shared=['base\\characters\\common\\textures\\shared_skin_n01.xbm','base\\characters\\garment\\textures\\shared_fabric_d01.xbm'],broken=st.report.mods.find(m=>m.error);
+  for(let i=0;i<918;i++){const miss=[shared[i%3?1:0],'pack_'+i+'\\meshes\\item_'+i+'.mesh'];
+   st.report.mods.push({name:'Outfit Pack '+String(i+1).padStart(3,'0'),file:'',source:'archive/pc/mod',priority:20+i,disk:1048576,delta:2e6,always:0,whenUsed:2e6,texDelta:0,meshDelta:2e6,textures:0,meshes:1,tris:900,overrides:0,shadowed:0,shadowedDisk:0,missing:2,flagged:1,ram:0,
+    assets:[{name:'pack_'+i+'\\meshes\\item.mesh',kind:'Mesh',class:'CMesh',gpu:2e6,delta:2e6,ram:0,tris:900,lods:1,override:false,always:false,missing:miss,flags:['references 2 missing file(s)']}]})}
+  for(let i=1;i<=4;i++)st.report.mods.push(Object.assign(clone(broken),{name:'zz_Broken'+i,priority:950+i}))}
  if(name==='scanning'){st.busy=job('scan','scanning','Scanning mods: 120 / 800',120,800,95);st.report=null}
  if(name==='fixing'){over(st.report);st.busy=job('fix','shrinking','Shrinking textures: 300 / 852',300,852,60)}
  if(name==='measuring'){st.busy=job('live','measuring','Measuring: the game is running',0,0,null);st.busy.live={seconds:42,game:6442450944,peak:6979321856,gpuTotal:9663676416};st.live.sessions=[{label:'before',startedAt:'2026-11-16T09:00:00Z',seconds:300,peak:7.9*G,steady:7.2*G}]}
