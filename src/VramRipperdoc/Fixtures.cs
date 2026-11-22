@@ -137,7 +137,8 @@ public static class Fixtures
         }
 
         // References that point at no file on purpose (v0.5.2 called them missing): a new mesh with one hard reference
-        // left empty and one set to "none".
+        // left empty and one set to "none". Since v0.6.0 also two the game skips (v0.5.3 called them missing): a lipsync
+        // file of one language, and a path on the mod author's own PC.
         foreach (var e in src.Entries)
         {
             var head0 = src.ReadSegment(src.Segments[(int)e.SegmentsStart]);
@@ -145,11 +146,13 @@ public static class Fixtures
             Cr2wFile c;
             try { c = new Cr2wFile(head0); } catch { continue; }
             if (c.RootClass != "CMesh") continue;
-            var hard = HardImports(c).Take(2).ToList();
-            if (hard.Count < 2) continue;
+            var hard = HardImports(c).Where(i => c.Imports[i].Length >= 43).Take(4).ToList();
+            if (hard.Count < 4) continue;
             var head = (byte[])head0.Clone();
             PatchImport(head, c.Imports[hard[0]], "");
             PatchImport(head, c.Imports[hard[1]], "none");
+            PatchImport(head, c.Imports[hard[2]], @"base\localization\fr-fr\lipsync\judy.anims");
+            PatchImport(head, c.Imports[hard[3]], @"c:\users\a\source\archive\base\x.xbm");
             var bl = new ArchiveWriter(); bl.Add(Rewritten(src, e, head, Fnv1a64.Hash(@"mymod\meshes\blank_refs.mesh")));
             bl.Write(Path.Combine(modDir, "#BlankRefs.archive"));
             break;
@@ -183,10 +186,86 @@ public static class Fixtures
                 ia.Add(Rewritten(ui, e, none, Fnv1a64.Hash(@"mymod\icons\atlas_no_texture.inkatlas")));
                 ia.Write(Path.Combine(modDir, "#IconAtlas.archive"));
                 Console.WriteLine($"icon atlas from {name}: {tex.Count} textures, spare slots point nowhere / none exist");
+
+                // A weapon mod's icons: a new atlas whose texture is a 4K new item. Shrinking new items must leave it
+                // alone, since half the texture is half the icon in game (v0.5.3 shrank it).
+                var big4k = new List<ArchiveEntry>();
+                foreach (var x in src.Entries)
+                {
+                    var segs = src.SegmentsOf(x).ToList();
+                    if (segs.Count == 2 && segs[1].Size >= 16 << 20 && src.ReadSegment(segs[0]) is { } th && th[0] == 'C' && new Cr2wFile(th).RootClass == "CBitmapTexture") big4k.Add(x);
+                    if (big4k.Count >= 2) break;
+                }
+                if (big4k.Count >= 2)
+                {
+                    const string iconTex = @"mymod\icons\gun_icons.xbm", iconAtlas = @"mymod\icons\gun_icons.inkatlas";
+                    var icons = (byte[])head0.Clone(); MakeImportsHard(icons);
+                    PatchImport(icons, c.Imports[tex[0]], iconTex);
+                    foreach (var i in tex.Skip(1)) PatchImport(icons, c.Imports[i], "");
+                    var gi = new ArchiveWriter();
+                    gi.Add(Rewritten(ui, e, icons, Fnv1a64.Hash(iconAtlas)));
+                    gi.Add(src, big4k[0], Fnv1a64.Hash(iconTex));
+                    gi.Write(Path.Combine(modDir, "#GunIcons.archive"));
+                    // Loaded during normal play: a replaced vanilla texture, 4K instead of the game's smaller one. A fix
+                    // made with plenty of room halves it once; scanned again with less room, the fix "leaves out" a halving.
+                    var small1k = byHash.Values.FirstOrDefault(x => src.SegmentsOf(x).Skip(1).Sum(s => (long)s.Size) is > 0 and < 2 << 20
+                        && src.ReadSegment(src.Segments[(int)x.SegmentsStart]) is { } sh && sh[0] == 'C' && new Cr2wFile(sh).RootClass == "CBitmapTexture");
+                    if (small1k != null)
+                    {
+                        var up = new ArchiveWriter(); up.Add(src, big4k[1], small1k.Hash);
+                        up.Write(Path.Combine(modDir, "UpscaledTexture.archive"));
+                    }
+                    Console.WriteLine($"gun icons: atlas + 4K texture; upscaled vanilla texture: {(small1k != null ? "yes" : "no small texture found")}");
+                }
                 done = true;
                 break;
             }
             if (done) break;
+        }
+
+        // A new car with three paint jobs: the game's Archer Hella body (22 looks) under a new path, its primer_red,
+        // poor_02 and poor_03 looks pointing at new files of different sizes (4K, 2K, 2K textures stand in for them).
+        // Only one look shows at a time, so "when used" counts the 4K one and leaves the two 2K ones out (v0.5.3 added all).
+        using (var city = new RdarArchive(Path.Combine(game, "archive", "pc", "content", "basegame_3_nightcity.archive")))
+        {
+            var body = city.Entries.FirstOrDefault(x => x.Hash == 0x435BAF73800F0E86UL);
+            var tex4k = big.Concat(small).FirstOrDefault(x => src.SegmentsOf(x).Skip(1).Sum(s => (long)s.Size) >= 16 << 20) ?? FirstTexture(src, 16 << 20);
+            var tex2k = big.Where(x => src.SegmentsOf(x).Skip(1).Sum(s => (long)s.Size) is >= 4 << 20 and < 8 << 20).Take(2).ToList();
+            if (body != null && tex4k != null && tex2k.Count == 2)
+            {
+                var segs = city.SegmentsOf(body).ToList();
+                var head = city.ReadSegment(segs[0])!;
+                const string dir = @"base\vehicles\standard\v_standard2_archer_hella\entities\meshes\textures\";
+                var looks = new[] { "primer_red", "poor_02", "poor_03" };
+                var stored = new List<(byte[], uint)>();
+                var plain = new List<byte[]>();
+                int patched = 0;
+                foreach (var s in segs.Skip(1))
+                {
+                    var buf = city.ReadSegment(s)!;
+                    foreach (var look in looks)
+                    {
+                        var from = Encoding.ASCII.GetBytes(dir + look + ".mlsetup");
+                        for (int at = buf.AsSpan().IndexOf(from); at >= 0; at = buf.AsSpan().IndexOf(from))
+                        { Encoding.ASCII.GetBytes("mymd").CopyTo(buf, at); patched++; }
+                    }
+                    plain.Add(buf);
+                    stored.Add((buf, (uint)buf.Length)); // stored uncompressed: the reader takes size == stored size as raw
+                }
+                if (patched >= 3)
+                {
+                    var cp = new ArchiveWriter();
+                    cp.Add(new WriteEntry(Fnv1a64.Hash(@"mymod\vehicles\hella_body.mesh"), body.Timestamp, body.NumInlineBufferSegments, new[] { (Oodle.CompressKark(head)!, (uint)head.Length) }.Concat(stored).ToList(),
+                        Array.Empty<ulong>(), ArchiveWriter.FileSha1(head, plain)));
+                    var mymd = "mymd" + dir[4..];
+                    cp.Add(src, tex4k, Fnv1a64.Hash(mymd + "primer_red.mlsetup"));
+                    cp.Add(src, tex2k[0], Fnv1a64.Hash(mymd + "poor_02.mlsetup"));
+                    cp.Add(src, tex2k[1], Fnv1a64.Hash(mymd + "poor_03.mlsetup"));
+                    cp.Write(Path.Combine(modDir, "#CarPaints.archive"));
+                }
+                Console.WriteLine($"car paints: {patched} look reference(s) moved to new files");
+            }
+            else Console.WriteLine("car paints: skipped (Archer Hella body or textures not found)");
         }
 
         // Vortex deployment manifest + an MO2 instance, as those managers write them.
@@ -219,6 +298,13 @@ public static class Fixtures
         uint off = BitConverter.ToUInt32(head, 64), count = BitConverter.ToUInt32(head, 68);
         for (int i = 0; i < count; i++) head[off + i * 8 + 6] &= unchecked((byte)~4);
     }
+
+    /// <summary>The first plain texture whose data is at least <paramref name="minBytes"/> (16 MB: a 4K BC7 texture).</summary>
+    static ArchiveEntry? FirstTexture(RdarArchive src, long minBytes) => src.Entries.FirstOrDefault(x =>
+    {
+        var segs = src.SegmentsOf(x).ToList();
+        return segs.Count == 2 && segs[1].Size >= minBytes && src.ReadSegment(segs[0]) is { } h && h[0] == 'C' && new Cr2wFile(h).RootClass == "CBitmapTexture";
+    });
 
     static string Typo(string s, char ch) { var a = s.ToCharArray(); a[^5] = ch; return new string(a); }
 

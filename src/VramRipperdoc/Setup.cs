@@ -144,11 +144,16 @@ public static class Setup
         return budget;
     }
 
-    /// <summary>Finds an existing fix (the scan only looks in the game folder) and whether it still matches the mods.</summary>
-    public static void CheckFix(ScanResult result, string modRoot, IEnumerable<string> fixDirs)
+    /// <summary>
+    /// Finds an existing fix (the scan only looks in the game folder), whether it still matches the mods, and what a
+    /// fix made again now would shrink on top of it.
+    /// </summary>
+    public static void CheckFix(ScanResult result, string modRoot, IEnumerable<string> fixDirs, long budget, IReadOnlySet<string>? keepSharp)
     {
         result.BudgetArchive ??= BudgetArchive.FindExisting(modRoot, fixDirs);
-        if (result.BudgetArchive != null) result.FixCheck = BudgetArchive.Check(result.BudgetArchive, result);
+        if (result.BudgetArchive == null) return;
+        result.FixCheck = BudgetArchive.Check(result.BudgetArchive, result);
+        if (result.FixCheck != null) BudgetArchive.Cover(result.FixCheck, result, budget, keepSharp);
     }
 }
 

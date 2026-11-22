@@ -38,6 +38,21 @@ public sealed class AssetInfo
     /// replaced material). Everything else (new clothing, cars, props) only costs VRAM when it is used.
     /// </summary>
     public bool AlwaysLoaded;
+    /// <summary>
+    /// An icon or other screen graphic. The game draws these at their pixel size (icon atlases cut their slots as
+    /// fractions of the texture), so a smaller copy looks smaller on screen: the budget fix never shrinks them.
+    /// </summary>
+    public bool IsUi;
+    /// <summary>
+    /// A mesh's looks (appearances: paint jobs, colours), each as the hashes of the files its materials point at.
+    /// Null when the mesh has one look, or its layout wasn't fully understood (then everything counts).
+    /// </summary>
+    public List<ulong[]>? Looks;
+    /// <summary>
+    /// Only another look of a new item needs this file, not its heaviest one. A car with ten paint jobs shows one at a
+    /// time, so "when used" leaves these out (see <see cref="Scanner.MarkSpareLooks"/>).
+    /// </summary>
+    public bool SpareLook;
     public List<string> Flags = new();
 
     /// <summary>VRAM this asset adds compared to running without the mod.</summary>
@@ -64,7 +79,10 @@ public sealed class ModReport
 
     public long GpuDelta => Assets.Sum(a => a.DeltaGpu);
     public long AlwaysDelta => Assets.Where(a => a.AlwaysLoaded).Sum(a => a.DeltaGpu);
-    public long WhenUsedDelta => Assets.Where(a => !a.AlwaysLoaded).Sum(a => a.DeltaGpu);
+    /// <summary>New items, each in its heaviest look (other looks of the same item are <see cref="SpareLookBytes"/>).</summary>
+    public long WhenUsedDelta => Assets.Where(a => !a.AlwaysLoaded && !a.SpareLook).Sum(a => a.DeltaGpu);
+    /// <summary>Files only other looks of new items need: never all in memory with the heaviest look, so not in "when used".</summary>
+    public long SpareLookBytes => Assets.Where(a => a.SpareLook).Sum(a => a.DeltaGpu);
     public long TextureDelta => Assets.Where(a => a.Kind == AssetKind.Texture).Sum(a => a.DeltaGpu);
     public long MeshDelta => Assets.Where(a => a.Kind == AssetKind.Mesh).Sum(a => a.DeltaGpu);
     public int Textures => Assets.Count(a => a.Kind == AssetKind.Texture);
@@ -133,6 +151,8 @@ public sealed class Scanner
     /// <summary>Paths named in .xl files. ArchiveXL makes some of them exist (resource link and copy targets).</summary>
     readonly HashSet<ulong> _xlPaths = new();
     static readonly Regex XlPathRx = new(@"[A-Za-z0-9_\-\.\\/]*[\\/][A-Za-z0-9_\-\.\\/]*\.[A-Za-z0-9_]{2,16}", RegexOptions.Compiled);
+    /// <summary>Voice and lipsync files of one language, e.g. base\localization\fr-fr\lipsync\...</summary>
+    static readonly Regex LanguageFileRx = new(@"(^|[\\/])localization[\\/][a-z]{2}-[a-z]{2}[\\/]", RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
     public Scanner(ScanOptions o) => _o = o;
     void Log(string s) => _o.Log?.Invoke(s);
@@ -257,6 +277,13 @@ public sealed class Scanner
                     queue.Enqueue(next);
                 }
 
+        MarkSpareLooks(loadedByHash);
+
+        // An icon atlas's textures are screen graphics, whatever texture group their author gave them.
+        foreach (var atlas in loadedByHash.Values.Where(a => a.Class == "inkTextureAtlas"))
+            foreach (var h in atlas.RefHashes)
+                if (loadedByHash.TryGetValue(h, out var tex) && tex.Kind == AssetKind.Texture) tex.IsUi = true;
+
         ScanTextReferences(roots);
         var dynamicArchives = ArchivesWithDynamicXl(roots);
         var existing = new HashSet<ulong>(winner.Keys);
@@ -271,6 +298,7 @@ public sealed class Scanner
 
                 // Hard references that point nowhere (only ones the mod added, so vanilla's own dead links don't count).
                 // A file exists when a mod, the game or a plugin's bundle has it, or when an .xl file creates it.
+                // The game skips a reference it can't resolve, so most of these are harmless leftovers of the mod's author.
                 if (_o.CompareVanilla)
                 {
                     var miss = new List<string>(); bool anyFound = false;
@@ -280,6 +308,10 @@ public sealed class Scanner
                         var h = Fnv1a64.Hash(imp);
                         // Empty or "none": a slot left blank on purpose, not a file.
                         if (h == 0 || imp.Trim().Equals("none", StringComparison.OrdinalIgnoreCase)) continue;
+                        // A path on the author's own PC (c:\users\...\source\archive\...): no player can have it.
+                        // Per-language voice and lipsync files: scenes list every language, the game loads one, and
+                        // the game's own scenes point at ones that don't exist either.
+                        if (imp.Contains(':') || LanguageFileRx.IsMatch(imp)) continue;
                         if (existing.Contains(h) || _baseIndex.ContainsKey(h) || _frameworkFiles.Contains(h) || _xlPaths.Contains(h)) anyFound = true;
                         else miss.Add(imp);
                     }
@@ -289,7 +321,7 @@ public sealed class Scanner
                     if (!(a.Class == "inkTextureAtlas" && (anyFound || a.OverridesBase))) a.MissingImports.AddRange(miss);
                 }
                 if (a.MissingImports.Count > 0)
-                    a.Flags.Add($"references {a.MissingImports.Count} missing file(s): {string.Join(", ", a.MissingImports.Take(3))}{(a.MissingImports.Count > 3 ? ", ..." : "")}");
+                    a.Flags.Add($"points at {a.MissingImports.Count} file(s) that aren't installed: {string.Join(", ", a.MissingImports.Take(3))}{(a.MissingImports.Count > 3 ? ", ..." : "")}");
 
                 if (a.IdenticalToVanilla) a.Flags.Add("identical to vanilla (does nothing)");
 
@@ -314,6 +346,59 @@ public sealed class Scanner
         res.Settings = GameSettings.Load();
         res.Elapsed = sw.Elapsed;
         return res;
+    }
+
+    /// <summary>
+    /// A new item shows one look at a time (a car's paint job, a jacket's colour), so "when used" counts each new mesh
+    /// in its heaviest look. Files only other looks need are marked <see cref="AssetInfo.SpareLook"/>. A file counts as
+    /// needed whatever the look (never spare) when anything reaches it other than through a look: another file, the
+    /// mesh's own shared parts, a replaced game file. Meshes whose looks weren't understood have no Looks, so all of
+    /// their files count, as before.
+    /// </summary>
+    public static void MarkSpareLooks(IReadOnlyDictionary<ulong, AssetInfo> loaded)
+    {
+        var meshes = loaded.Values.Where(a => a.Looks != null && !a.AlwaysLoaded).ToList();
+        if (meshes.Count == 0) return;
+        HashSet<ulong> Reach(IEnumerable<ulong> start, Func<ulong, bool> within)
+        {
+            var seen = new HashSet<ulong>();
+            var q = new Queue<ulong>(start.Where(h => loaded.ContainsKey(h) && within(h)));
+            foreach (var h in q) seen.Add(h);
+            while (q.TryDequeue(out var h))
+                foreach (var next in loaded[h].RefHashes)
+                    if (loaded.ContainsKey(next) && within(next) && seen.Add(next)) q.Enqueue(next);
+            return seen;
+        }
+        // Every file some look points at, and what those files point at in turn.
+        var inLooks = Reach(meshes.SelectMany(m => m.Looks!.SelectMany(l => l)), _ => true);
+        // Needed whatever the look: reached from any file outside the looks, except through a mesh's look-only references.
+        var lookRefs = meshes.ToDictionary(m => m.Hash, m => m.Looks!.SelectMany(l => l).ToHashSet());
+        var shared = new HashSet<ulong>();
+        var queue = new Queue<AssetInfo>();
+        foreach (var a in loaded.Values) if (!inLooks.Contains(a.Hash) && shared.Add(a.Hash)) queue.Enqueue(a);
+        while (queue.TryDequeue(out var cur))
+        {
+            var skip = lookRefs.GetValueOrDefault(cur.Hash);
+            foreach (var h in cur.RefHashes)
+                if (skip?.Contains(h) != true && loaded.TryGetValue(h, out var next) && shared.Add(h)) queue.Enqueue(next);
+        }
+        var lookOnly = inLooks.Where(h => !shared.Contains(h)).ToHashSet();
+        if (lookOnly.Count == 0) return;
+        // Per mesh, the look whose own files cost the most stays counted.
+        var keep = new HashSet<ulong>();
+        foreach (var m in meshes)
+        {
+            HashSet<ulong>? best = null; long bestCost = -1;
+            foreach (var look in m.Looks!)
+            {
+                var own = Reach(look, lookOnly.Contains);
+                long cost = own.Sum(h => Math.Max(0, loaded[h].DeltaGpu));
+                if (cost > bestCost) { bestCost = cost; best = own; }
+            }
+            if (best != null) keep.UnionWith(best);
+        }
+        foreach (var h in lookOnly)
+            if (!keep.Contains(h) && loaded[h] is { AlwaysLoaded: false } a) a.SpareLook = true;
     }
 
     int LoadBaseIndex()
@@ -465,6 +550,7 @@ public sealed class Scanner
             lock (ba) baseImports = ReadDetails(ba, be, vanilla, collectNames: false);
             info.BaseGpuBytes = vanilla.GpuBytes; // same rule as the mod's file, so a replaced animation costs 0 either way
             info.BaseWidth = vanilla.Width; info.BaseHeight = vanilla.Height; info.BaseTris0 = vanilla.Tris0;
+            info.IsUi |= vanilla.IsUi; // a replaced game icon stays an icon, whatever group the mod's copy has
             var known = new HashSet<string>(baseImports.Select(i => i.Item1), StringComparer.OrdinalIgnoreCase);
             info.NewImports = imports.Where(i => IsHardImport(i.Item2) && !known.Contains(i.Item1)).Select(i => i.Item1).ToList();
         }
@@ -518,6 +604,17 @@ public sealed class Scanner
                         if (buf != null) foreach (Match m in PathRx.Matches(Encoding.Latin1.GetString(buf))) info.RefHashes.Add(AddReference(m.Value));
                     }
                     catch { }
+            // Which files each look of the mesh needs (MeshVariants never throws; null = count everything).
+            if (c.RootClass == "CMesh")
+            {
+                var bufs = a.SegmentsOf(e).Skip(1).ToList();
+                byte[]? ReadBuffer(int i) { try { return i >= 0 && i < bufs.Count ? a.ReadSegment(bufs[i]) : null; } catch { return null; } }
+                if (MeshVariants.Read(c, head, ReadBuffer) is { } looks)
+                {
+                    info.Looks = looks.Select(v => v.Paths.Select(AddReference).Where(h => h != 0).Distinct().ToArray()).ToList();
+                    foreach (var h in info.Looks.SelectMany(l => l)) if (!info.RefHashes.Contains(h)) info.RefHashes.Add(h);
+                }
+            }
         }
 
         try
@@ -528,7 +625,11 @@ public sealed class Scanner
             {
                 info.Kind = AssetKind.Texture;
                 var root = c.ReadExport(0);
-                if (root.Get("setup") is Dictionary<string, object?> setup) info.Compression = setup.Get("compression") as string;
+                if (root.Get("setup") is Dictionary<string, object?> setup)
+                {
+                    info.Compression = setup.Get("compression") as string;
+                    info.IsUi = setup.Get("group") is "TEXG_Generic_UI" or "TEXG_Generic_Font";
+                }
                 var header = c.ReadExport(texBlob).Get("header") as Dictionary<string, object?>;
                 var size = header?.Get("sizeInfo") as Dictionary<string, object?>;
                 var ti = header?.Get("textureInfo") as Dictionary<string, object?>;

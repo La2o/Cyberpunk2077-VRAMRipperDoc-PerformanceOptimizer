@@ -8,7 +8,7 @@ Script profilers show what redscript and CET mods cost. Nothing showed what *ass
 - **Geometry:** LOD0 triangles, missing LODs, "N× vanilla triangles"
 - **Texture problems:** 4K/8K, no mipmaps, uncompressed formats, "16× vanilla pixels"
 - **Dead weight:** files that lose a load-order conflict and never load, files identical to vanilla, duplicate copies across mods
-- **Problems:** truncated or corrupt archives, and **missing references** (a mod points at a file that isn't installed, usually a missing requirement)
+- **Problems:** truncated or corrupt archives, and an out-of-date budget fix. Apart from those, **references to files you don't have** (a mod points at a file that isn't installed): usually a harmless leftover of the mod's author, sometimes a missing requirement
 - **Possibly unused files:** new textures and meshes nothing references
 - **Which installed mod each archive belongs to,** read from Vortex or Mod Organizer 2, with a link to its Nexus page
 
@@ -102,12 +102,12 @@ Everything is also available from the command line:
 | Column | Meaning |
 |---|---|
 | **Normal play** | Extra GPU memory during normal play: files that replace game files, plus new files those replaced files point to. This is what the budget is compared against. Negative means lighter than vanilla. |
-| **When used** | New clothing, cars, weapons and props. They only take VRAM while worn, driven or spawned, so this total never loads at once and is not counted against the budget. |
+| **When used** | New clothing, cars, weapons and props. They only take VRAM while worn, driven or spawned, so this total never loads at once and is not counted against the budget. Each item counts in its heaviest look: files only its other looks (paint jobs, colours) need are listed apart, since one look shows at a time. |
 | **Tex / Mesh** | Texture and mesh counts in the archive |
 | **Tris LOD0** | Triangles at full detail, summed over meshes that actually load |
 | **Overrides** | Files that replace a vanilla file |
 | **Never loads** | Files another archive wins in load order (pure dead weight) |
-| **Missing** | Hard references to files that exist nowhere: in vanilla or in any installed mod |
+| **Missing** | Hard references to files that exist nowhere: in vanilla or in any installed mod. The game skips these, so they are usually harmless; they matter when a mod looks wrong in game |
 | **Flags** | Files with a warning (click the row to see them) |
 
 "Group by installed mod" adds up all archives of one Vortex/MO2 mod. "Copy summary" puts a short Markdown table on your clipboard for Nexus, Reddit or Discord.

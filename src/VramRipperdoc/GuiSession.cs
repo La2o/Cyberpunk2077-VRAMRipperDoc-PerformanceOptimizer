@@ -206,7 +206,9 @@ public sealed class GuiSession
     void RefreshReport()
     {
         if (_result == null) return;
-        _report = ReportJson(_result, BudgetPlan.Build(_result, _budget, keepSharp: KeepSharp.Set(_keepSharp)));
+        var keep = KeepSharp.Set(_keepSharp);
+        if (_result.FixCheck is { } fix) BudgetArchive.Cover(fix, _result, _budget, keep); // Keep sharp changes what a fix would shrink
+        _report = ReportJson(_result, BudgetPlan.Build(_result, _budget, keepSharp: keep));
     }
 
     // ---- Folders and keep-sharp ----------------------------------------------------------------------------------
@@ -339,7 +341,7 @@ public sealed class GuiSession
         }).Scan();
 
         long budget = Setup.Budget(result, _opts);
-        Setup.CheckFix(result, ModRootOf(game)!, Setup.FixDirs(_settingsFile, mo2));
+        Setup.CheckFix(result, ModRootOf(game)!, Setup.FixDirs(_settingsFile, mo2), budget, keep);
         var plan = BudgetPlan.Build(result, budget, keepSharp: keep);
         string? notSaved = null;
         try
@@ -363,9 +365,9 @@ public sealed class GuiSession
     }
 
     /// <summary>FixOptions: { "normal": true, "newItems": "none" | "2k" | "1k" }. newMax 0 = leave new items alone.</summary>
-    static string? ReadOptions(JsonElement? doc, out bool normal, out int newMax)
+    static string? ReadOptions(JsonElement? doc, out bool normal, out int newMax, out long extra)
     {
-        normal = true; newMax = 0;
+        normal = true; newMax = 0; extra = 0;
         if (doc is not { ValueKind: JsonValueKind.Object } o) return doc == null ? null : "Send the choices as {\"normal\": true, \"newItems\": \"none\"}.";
         if (o.TryGetProperty("normal", out var n))
         {
@@ -382,14 +384,25 @@ public sealed class GuiSession
                 default: return "\"newItems\" must be \"none\", \"2k\" or \"1k\".";
             }
         }
+        if (o.TryGetProperty("extraRoom", out var er))
+        {
+            // In GB, one of the choices the window offers (or 0).
+            if (er.ValueKind != JsonValueKind.Number || !er.TryGetDouble(out double gb) || gb != 0 && !FixOptions.ExtraRoomChoices.Contains(gb))
+                return "\"extraRoom\" must be 0, " + string.Join(", ", FixOptions.ExtraRoomChoices.Select(c => c.ToString(System.Globalization.CultureInfo.InvariantCulture))) + " (GB).";
+            extra = (long)(gb * (1L << 30));
+        }
         return null;
     }
 
     sealed record Choice(BudgetPlan Normal, List<PlanStep> To2k, List<PlanStep> To1k, List<PlanStep> Chosen, int KeptMods, int KeptTextures);
 
-    /// <summary>The same choices the console's "2 - Apply budget fix" asks about, for these FixOptions.</summary>
-    static Choice Choose(ScanResult r, long budget, HashSet<string> keep, bool normal, int newMax)
+    /// <summary>
+    /// The same choices the console's "2 - Apply budget fix" asks about, for these FixOptions. With extra room the plan
+    /// aims that much below the room for mods, so it halves more.
+    /// </summary>
+    static Choice Choose(ScanResult r, long budget, HashSet<string> keep, bool normal, int newMax, long extra)
     {
+        budget = Math.Max(0, budget - extra);
         var plan = BudgetPlan.Build(r, budget, includeNew: false, keepSharp: keep);
         var p2k = BudgetPlan.Build(r, budget, includeNew: true, 2048, keep);
         var p1k = BudgetPlan.Build(r, budget, includeNew: true, 1024, keep);
@@ -414,17 +427,19 @@ public sealed class GuiSession
 
     Answer Plan(JsonElement? doc)
     {
-        if (ReadOptions(doc, out bool normal, out int newMax) is { } bad) return Error(400, bad);
+        if (ReadOptions(doc, out bool normal, out int newMax, out long extra) is { } bad) return Error(400, bad);
         if (!Snapshot(out var r, out long budget, out var keep)) return Error(400, "Scan your mods first.");
-        var c = Choose(r, budget, keep, normal, newMax);
+        var c = Choose(r, budget, keep, normal, newMax, extra);
         static void Count(Utf8JsonWriter w, string name, List<PlanStep> steps)
         {
             w.WriteStartObject(name); w.WriteNumber("count", steps.Count); w.WriteNumber("saves", steps.Sum(s => s.Saves)); w.WriteEndObject();
         }
         return Ok(w =>
         {
-            w.WriteNumber("budget", c.Normal.Budget); w.WriteNumber("current", c.Normal.Current); w.WriteNumber("afterPlan", c.Normal.AfterPlan);
+            // budget: the room for mods. target: what the fix aims for (the room minus the extra room asked for).
+            w.WriteNumber("budget", budget); w.WriteNumber("target", c.Normal.Budget); w.WriteNumber("current", c.Normal.Current); w.WriteNumber("afterPlan", c.Normal.AfterPlan);
             w.WriteBoolean("fits", c.Normal.Reachable);
+            w.WriteStartArray("extraRoomChoices"); foreach (var gb in FixOptions.ExtraRoomChoices) w.WriteNumberValue(gb); w.WriteEndArray();
             Count(w, "normal", c.Normal.Steps);
             Count(w, "newItems2k", c.To2k);
             Count(w, "newItems1k", c.To1k);
@@ -444,16 +459,18 @@ public sealed class GuiSession
 
     Answer StartFix(JsonElement? doc)
     {
-        if (ReadOptions(doc, out bool normal, out int newMax) is { } bad) return Error(400, bad);
+        if (ReadOptions(doc, out bool normal, out int newMax, out long extra) is { } bad) return Error(400, bad);
         if (!Snapshot(out var r, out long budget, out var keep)) return Error(400, "Scan your mods first.");
         if (Busy) return Busy409();
-        var c = Choose(r, budget, keep, normal, newMax);
+        var c = Choose(r, budget, keep, normal, newMax, extra);
         if (c.Chosen.Count == 0) return Error(400, "Nothing to shrink with these choices, so no fix was made.");
+        // "Normal" unticked only counts as a choice when there was something to halve; otherwise the window greys it out.
+        var made = new FixOptions(normal || c.Normal.Steps.Count == 0, newMax, extra);
         var job = new Job { Kind = "fix", Phase = "shrinking", Message = $"Shrinking textures: 0 / {c.Chosen.Count:N0}", Total = c.Chosen.Count };
-        return TryStart(job, () => RunFix(job, r, budget, keep, c.Chosen), "The fix failed") ? Accepted() : Busy409();
+        return TryStart(job, () => RunFix(job, r, budget, keep, c.Chosen, made), "The fix failed") ? Accepted() : Busy409();
     }
 
-    Finished RunFix(Job job, ScanResult r, long budget, HashSet<string> keep, List<PlanStep> chosen)
+    Finished RunFix(Job job, ScanResult r, long budget, HashSet<string> keep, List<PlanStep> chosen, FixOptions made)
     {
         string game; string? mo2;
         lock (_gate) { game = _game!; mo2 = _mo2; }
@@ -473,6 +490,7 @@ public sealed class GuiSession
         };
         var plan = BudgetPlan.Build(r, budget, keepSharp: keep);
         plan.Steps = chosen;
+        plan.Made = made;
         var outcome = fix.Build(r, plan, game, modRoot, target, threads, Setup.FixDirs(_settingsFile, mo2), _settingsFile, _ => { });
         job.Refresh = null;
         if (outcome.Textures == 0)
@@ -480,6 +498,7 @@ public sealed class GuiSession
                 w => { w.WriteNumber("textures", 0); w.WriteNumber("skipped", outcome.Skipped.Count); });
 
         var check = BudgetArchive.Check(outcome.Path, r);
+        if (check != null) BudgetArchive.Cover(check, r, budget, keep);
         lock (_gate)
         {
             if (ReferenceEquals(_result, r)) { r.BudgetArchive = outcome.Path; r.FixCheck = check; RefreshReport(); }

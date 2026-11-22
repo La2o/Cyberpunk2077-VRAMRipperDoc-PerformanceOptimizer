@@ -167,6 +167,13 @@ public static class GuiTest
                 $"plan 1k: {Count(p1k, "chosen")} = normal + {Count(p1k, "newItems1k")} new items (1K takes at least as many as 2K)");
             Post("/api/plan", "{\"newItems\": \"4k\"}", out st);
             Check(st == 400, "plan with newItems 4k refused");
+            // Extra room aims the fix below the room for mods, so it can only halve as much or more.
+            var extra = Post("/api/plan", "{\"normal\": true, \"newItems\": \"none\", \"extraRoom\": 2}", out int sx);
+            Check(sx == 200 && extra.GetProperty("target").GetInt64() == Math.Max(0, none.GetProperty("budget").GetInt64() - (2L << 30))
+                && extra.GetProperty("budget").GetInt64() == none.GetProperty("budget").GetInt64() && Count(extra, "normal") >= Count(none, "normal"),
+                $"plan with 2 GB extra room: aims 2 GB lower, {Count(extra, "normal")} texture(s) instead of {Count(none, "normal")}");
+            Post("/api/plan", "{\"extraRoom\": 7}", out st);
+            Check(st == 400, "plan with an extra room that isn't offered refused");
 
             var perMod = p1k.GetProperty("chosen").GetProperty("perMod");
             var keep = perMod.EnumerateArray().First().GetProperty("mod").GetString()!;

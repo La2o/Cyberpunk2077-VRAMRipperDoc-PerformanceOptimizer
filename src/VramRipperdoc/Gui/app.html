@@ -35,6 +35,7 @@ input[type=checkbox],input[type=radio]{accent-color:var(--acc);width:16px;height
 label.opt{display:flex;gap:10px;align-items:flex-start;padding:8px 10px;border:1px solid var(--line);border-radius:8px;margin-bottom:8px;cursor:pointer}
 label.opt.off{opacity:.55;cursor:not-allowed}label.opt b{display:block}
 fieldset{border:0;padding:0;margin:0}legend{font-weight:600;margin-bottom:6px;padding:0}
+label.pick{display:flex;gap:6px;align-items:center;padding:6px 12px;border:1px solid var(--line);border-radius:8px;cursor:pointer}
 /* layout blocks */
 .panel{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:14px;margin-bottom:16px}
 .actions{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:16px 0 6px}.actions .sp{flex:1}
@@ -273,44 +274,55 @@ function cards(R){
  const c=(k,v,s,cls)=>h('div',{class:'card'},h('div',{class:'k'},k),h('div',{class:'v '+(cls||'')},v),s?h('div',{class:'s'},s):null);
  return h('div',{class:'cards'},c('Extra VRAM in normal play',sz(R.alwaysDelta)),c('New items (only when used)',sz(R.whenUsedDelta)),
   c('GPU',R.gpu?sz(R.gpuVram):'unknown',R.gpu),c('Room for mods (normal play)',sz(R.budget.budget)),
-  c('Flagged files',flagged.toLocaleString()),c('Missing references',miss.toLocaleString(),null,miss?'hot':''),
+  c('Flagged files',flagged.toLocaleString()),c('References to missing files',miss.toLocaleString()),
   c('Dead weight (never loads)',sz(dead)),c('Other data (system RAM, not VRAM)',sz(R.ramBytes||0)));}
 
 // A kind of problem with more than 3 entries gets one line and a folded list, so the mod list isn't 900 entries further down.
 // The list is only built when opened; whether it is open is kept while the app runs.
+// A long list folds into a "Show the list" line. It is only built when opened; whether it is open is kept while the app runs.
+function foldList(key,items){
+ let built=false;const d=h('details',{class:'fold'},h('summary',{'data-fid':'fold:'+key},'Show the list ('+items.length.toLocaleString()+')'));
+ const build=()=>{if(!built){built=true;d.append(h('ul',{class:'probs'},items.map(f=>f(true))))}};
+ d.addEventListener('toggle',()=>{ui.fold[key]=d.open;if(d.open)build()});
+ if(ui.fold[key]){d.open=true;build()}
+ return d}
+// Problems: what really needs doing. Files that mods point at but nobody has are a calmer note of their own (looseRefs).
 function problems(R){
  const li=[],F=R.budgetFix;let n=0;
- const fold=(key,head,items)=>{n+=items.length;
-  if(items.length<=3){for(const f of items)li.push(f(false));return}
-  let built=false;const d=h('details',{class:'fold'},h('summary',{'data-fid':'fold:'+key},'Show the list ('+items.length.toLocaleString()+')'));
-  const build=()=>{if(!built){built=true;d.append(h('ul',{class:'probs'},items.map(f=>f(true))))}};
-  d.addEventListener('toggle',()=>{ui.fold[key]=d.open;if(d.open)build()});
-  if(ui.fold[key]){d.open=true;build()}
-  li.push(h('li',null,head,d))};
  const one=x=>{n++;li.push(x)};
- if(F&&F.stale)one(h('li',null,b('The budget fix is out of date: '),F.why,p('note','It still shows old copies of those textures. Rebuild it, or remove it.'),
-  h('div',{class:'row'},h('button',{class:'primary small',onclick:openFix,disabled:busy()},'Rebuild the budget fix...'),h('button',{class:'small',onclick:()=>{ui.undo=true;renderActions();window.scrollTo(0,0)}},'Undo budget fix')),
-  (F.changed.length||F.removed.length)?h('details',null,h('summary',{class:'note'},'Which textures'),h('pre',{class:'mono note'},[...F.changed.map(x=>'updated since: '+x),...F.removed.map(x=>'mod removed: '+x)].slice(0,50).join('\n'))):null));
+ if(F&&F.stale){const which=[...F.changed.map(x=>'updated since: '+x),...F.removed.map(x=>'mod removed: '+x),...(F.icons||[]).map(x=>'icon: '+x)];
+  one(h('li',null,b('The budget fix is out of date: '),F.why+'.',
+   h('div',{class:'row',style:'margin-top:6px'},h('button',{class:'primary small',onclick:openFix,disabled:busy()},'Rebuild the budget fix...'),h('button',{class:'small',onclick:()=>{ui.undo=true;renderActions();window.scrollTo(0,0)}},'Undo budget fix')),
+   which.length?h('details',null,h('summary',{class:'note'},'Which textures'),h('pre',{class:'mono note'},which.slice(0,50).join('\n'))):null))}
  else if(F&&!F.manifest)one(h('li',null,b('Old budget fix: '),'it was made by v0.3.1 or older, which can\'t tell whether your mods changed since. If you updated texture mods, apply the fix again.'));
  if(R.oodle===false)one(h('li',null,b('Texture sizes are estimates: '),'the game\'s decompression library was not found, so only file sizes are known.'));
- const missNames=m=>[...new Set(m.assets.flatMap(a=>a.missing||[]))];
- const broken=R.mods.filter(m=>m.error),miss=R.mods.filter(m=>m.missing>0);
- const top=(()=>{const c=new Map();for(const m of miss)for(const x of missNames(m))c.set(x,(c.get(x)||0)+1);return[...c].filter(e=>e[1]>1).sort((a,c)=>c[1]-a[1]).slice(0,5)})();
- fold('broken',[b('Broken archives: '),broken.length.toLocaleString()+' archives can\'t be read by the game. Reinstall or remove those mods.'],
-  broken.map(m=>short=>h('li',null,short?null:b('Broken archive: '),h('span',{class:'mono'},m.name),p('note','The game can\'t read it ('+m.error+').'+(short?'':' Reinstall or remove this mod.')))));
- fold('missing',[b('Missing files: '),miss.length.toLocaleString()+' mod archives need files that are not installed. Usually a requirement of those mods is missing: check their mod pages. The Missing column in the mod list shows the same mods.',
-   top.length?h('div',{class:'note'},'Most often missing: ',top.map(([x,c])=>h('span',{style:'margin-right:10px'},h('code',null,x),' ('+c.toLocaleString()+' archives)'))):null],
-  miss.map(m=>short=>{const names=missNames(m);
-   return h('li',null,short?null:b('Missing files: '),h('span',{class:'mono'},m.name),' needs '+m.missing+' file(s) that are not installed',
-    names.length?h('div',{class:'note'},names.slice(0,6).map(n=>h('code',{style:'margin-right:8px'},n)),names.length>6?'and '+(names.length-6)+' more':null):null,
-    short?null:p('note','Usually a requirement of this mod is missing: check its mod page.'))}));
+ const broken=R.mods.filter(m=>m.error);n+=broken.length;
+ const item=m=>short=>h('li',null,short?null:b('Broken archive: '),h('span',{class:'mono'},m.name),p('note','The game can\'t read it ('+m.error+').'+(short?'':' Reinstall or remove this mod.')));
+ if(broken.length<=3)for(const m of broken)li.push(item(m)(false));
+ else li.push(h('li',null,b('Broken archives: '),broken.length.toLocaleString()+' archives can\'t be read by the game. Reinstall or remove those mods.',foldList('broken',broken.map(item))));
  return li.length?h('div',{class:'panel',style:'border-color:var(--hot)'},h('h2',null,'Problems ('+n.toLocaleString()+')'),h('ul',{class:'probs'},li)):null;}
+// The game skips a reference it can't resolve, and mod authors leave plenty, so this is a note, not a problem.
+function looseRefs(R){
+ const miss=R.mods.filter(m=>m.missing>0);if(!miss.length)return null;
+ const names=m=>[...new Set(m.assets.flatMap(a=>a.missing||[]))],c=new Map();
+ for(const m of miss)for(const x of names(m))c.set(x,(c.get(x)||0)+1);
+ const top=[...c].filter(e=>e[1]>1).sort((a,d)=>d[1]-a[1]).slice(0,5);
+ const item=m=>()=>{const n=names(m);return h('li',null,h('span',{class:'mono'},m.name),' points at '+m.missing+' file(s) that aren\'t installed',
+  n.length?h('div',{class:'note'},n.slice(0,6).map(x=>h('code',{style:'margin-right:8px'},x)),n.length>6?'and '+(n.length-6)+' more':null):null)};
+ return h('div',{class:'panel'},h('h2',null,'Mods that point at files you don\'t have ('+miss.length.toLocaleString()+')'),
+  p('','Usually harmless. Mod authors often leave references to files they never shipped, or that a game update removed, and the game skips them. It only matters when a mod looks wrong in game (an invisible part, a black or pink texture): then check on its mod page that you have everything it needs.'),
+  top.length?h('div',{class:'note'},'Most often: ',top.map(([x,k])=>h('span',{style:'margin-right:10px'},h('code',null,x),' ('+k.toLocaleString()+' archives)'))):null,
+  miss.length<=3?h('ul',{class:'probs',style:'margin-top:8px'},miss.map(m=>item(m)())):foldList('missing',miss.map(item)));}
 
 function budgetPanel(R){
- const B=R.budget,over=B.current>B.budget,steps=B.steps.filter(s=>s.always).length,k=[h('h2',null,'Room for your mods')];
+ const B=R.budget,F=R.budgetFix,over=B.current>B.budget,steps=B.steps.filter(s=>s.always).length,k=[h('h2',null,'Room for your mods')];
+ // after: what the fix that is there now reaches; left: textures a fix made again now would also shrink (mods added since).
+ const after=F&&F.after!=null?F.after:B.afterPlan,left=F&&!F.stale&&F.notCovered||0;
  if(R.budgetArchive)k.push(p('ok','The budget fix is active (',h('code',null,R.budgetArchive),'). "Undo budget fix" removes it.'));
+ if(left)k.push(h('div',{class:'confirm'},h('span',{style:'flex:1;min-width:240px'},b(left.toLocaleString()+' texture(s) aren\'t in the budget fix yet. '),'You added mods, or your settings leave less room, since it was made. Applying it again saves about '+sz(F.notCoveredSaves)+' more.'),
+  h('button',{class:'primary small',onclick:openFix,disabled:busy()},'Apply budget fix again...')));
  if(!over)k.push(p('ok','During normal play your mods add about ',b(sz(B.current)),' on top of the game itself. At your settings your card has room for '+sz(B.budget)+' of that, so nothing needs fixing.'));
- else if(R.budgetArchive)k.push(p('','Without the fix your mods would add about '+sz(B.current)+' on top of the game during normal play, '+sz(B.current-B.budget)+' more than the '+sz(B.budget)+' of room your card has. The fix brings this to about ',b(sz(B.afterPlan)),B.afterPlan<=B.budget?', which fits.':'; to go lower, remove or swap the heaviest mod below.'));
+ else if(R.budgetArchive)k.push(p('','Without the fix your mods would add about '+sz(B.current)+' on top of the game during normal play, '+sz(B.current-B.budget)+' more than the '+sz(B.budget)+' of room your card has. The fix brings this to about ',b(sz(after)),after<=B.budget?', which fits.':left?'; applying it again shrinks the rest.':'; to go lower, remove or swap the heaviest mod below.'));
  else{k.push(p('warn','During normal play your mods add about ',b(sz(B.current)),' on top of the game itself, but at your settings your card only has room for '+sz(B.budget)+': '+sz(B.current-B.budget)+' too much.'));
   k.push(B.afterPlan<=B.budget?p('','Halving '+steps+' texture(s) fixes it. It adds one extra file and never changes your mods.'):p('','Halving the biggest textures gets you to '+sz(B.afterPlan)+'. To go lower, remove or swap the heaviest mod in the table below.'));
   k.push(h('button',{class:'primary',onclick:openFix,disabled:busy()},'Apply budget fix...'));}
@@ -324,8 +336,8 @@ function budgetPanel(R){
 // ---- mods table ----
 function groups(R){const g=new Map();
  for(const m of R.mods){const k=keyOf(m);
-  if(!g.has(k))g.set(k,{name:k,package:m.package,nexusId:m.nexusId,manager:m.manager,priority:m.priority,source:m.source,assets:[],archives:[],disk:0,delta:0,always:0,whenUsed:0,textures:0,meshes:0,tris:0,overrides:0,shadowed:0,missing:0,flagged:0,ram:0});
-  const x=g.get(k);for(const f of['disk','delta','always','whenUsed','textures','meshes','tris','overrides','shadowed','missing','flagged','ram'])x[f]+=m[f]||0;
+  if(!g.has(k))g.set(k,{name:k,package:m.package,nexusId:m.nexusId,manager:m.manager,priority:m.priority,source:m.source,assets:[],archives:[],disk:0,delta:0,always:0,whenUsed:0,textures:0,meshes:0,tris:0,overrides:0,shadowed:0,missing:0,flagged:0,ram:0,spareLooks:0});
+  const x=g.get(k);for(const f of['disk','delta','always','whenUsed','textures','meshes','tris','overrides','shadowed','missing','flagged','ram','spareLooks'])x[f]+=m[f]||0;
   x.assets.push(...m.assets);x.archives.push(m.name);if(m.error)x.error=m.error}
  for(const x of g.values())x.assets.sort((a,c)=>Math.abs(c.delta)-Math.abs(a.delta));return[...g.values()]}
 const COLS=[['keep','Keep sharp','l'],['priority','#','l'],['name','Mod','l'],['always','Normal play'],['whenUsed','+ When used'],['textures','Tex'],['meshes','Mesh'],['tris','Tris LOD0','opt2'],['overrides','Overrides','opt2'],['shadowed','Never loads'],['missing','Missing'],['flagged','Flags']];
@@ -345,11 +357,11 @@ function renderTable(){
    h('td',{class:'l num'},m.priority),
    h('td',{class:'l'},h('button',{class:'modname','data-fid':'open:'+m.name,'aria-expanded':String(isOpen),onclick:()=>{isOpen?ui.open.delete(m.name):ui.open.add(m.name);renderTable()}},(isOpen?'\u25BE ':'\u25B8 ')+m.name),
     m.error?h('span',{class:'tag',style:'margin-left:6px'},m.error):null,
-    h('div',{class:'note'},[m.source,sz(m.disk)+' on disk',m.archives?m.archives.length+' archive(s)':(m.package&&m.package!==m.name&&!(m.source||'').includes(m.package)?(m.manager||'')+': '+m.package:null),m.ram>=50*2**20?sz(m.ram)+' other data (system RAM, not VRAM)':null].filter(Boolean).join(' \u00B7 '))),
+    h('div',{class:'note'},[m.source,sz(m.disk)+' on disk',m.archives?m.archives.length+' archive(s)':(m.package&&m.package!==m.name&&!(m.source||'').includes(m.package)?(m.manager||'')+': '+m.package:null),m.ram>=50*2**20?sz(m.ram)+' other data (system RAM, not VRAM)':null,m.spareLooks?sz(m.spareLooks)+' in other looks of the same items (one look shows at a time)':null].filter(Boolean).join(' \u00B7 '))),
    h('td',{class:'num big '+(m.always<0?'neg':m.always>2**30?'hot':'')},sz(m.always),h('div',{class:'mb'},h('i',{style:'width:'+Math.max(0,m.always)/max*100+'%'}))),
    h('td',{class:'num big'},sz(m.whenUsed)),
    h('td',null,m.textures),h('td',null,m.meshes),h('td',{class:'opt2'},m.tris.toLocaleString()),h('td',{class:'opt2'},m.overrides),h('td',null,m.shadowed),
-   h('td',{class:m.missing?'hot':''},m.missing),h('td',{class:m.flagged?'hot':''},m.flagged)));
+   h('td',null,m.missing),h('td',{class:m.flagged?'hot':''},m.flagged)));
   if(isOpen)body.push(detailRow(m))}
  if(!rows.length)body.push(h('tr',null,h('td',{class:'l',colspan:99},R.mods.length?'No mods match the filter.':'No .archive mods found.')));
  put(wrap,h('table',null,head,body));focusRestore(fs);}
@@ -365,6 +377,9 @@ function detailRow(m){
     h('td',{class:'num'},sz(a.gpu)),h('td',{class:'num '+(a.delta<0?'neg':'')},sz(a.delta)),
     h('td',{class:'l'},a.gpu===0&&a.ram>0?h('span',{class:'tag dead'},sz(a.ram)+' in system RAM, not VRAM'):null,
      h('span',{class:'tag dead'},a.override?'replaces a game file':a.always?'used by a replaced file':'new item'),
+     a.ui?h('span',{class:'tag dead'},'icon or screen graphic: the fix never shrinks it'):null,
+     a.spareLook?h('span',{class:'tag dead'},'another look of an item: not in When used'):null,
+     a.looks?h('span',{class:'tag dead'},a.looks+' looks'):null,
      (a.flags||[]).map(f=>h('span',{class:'tag '+(a.shadowedBy?'dead':'')},f)))))),
    m.assets.length>60?p('note',(m.assets.length-60)+' more in the report file'):null]:p('note','No details to show.')));}
 
@@ -380,10 +395,10 @@ function tablePanel(R){
   h('div',{class:'tools'},q,h('label',null,h('input',{type:'checkbox','data-fid':'grp',checked:ui.grp,onchange:e=>{ui.grp=e.target.checked;ui.open.clear();renderTable()}}),'Group by installed mod'),h('label',{title:'Use the whole window width'},h('input',{type:'checkbox','data-fid':'wide',checked:wideOn(),onchange:e=>setWide(e.target.checked)}),'Wide view'),cb),
   h('div',{id:'tblwrap',class:'tblwrap'}),
   h('details',null,h('summary',{class:'note'},'What do these columns mean?'),
-   p('note',b('Normal play'),' = extra VRAM because the mod replaces game files (loaded whenever those things are on screen). ',b('When used'),' = new clothing, cars, weapons or props, which only take VRAM while you wear, drive or spawn them. When used comes on top of Normal play. A negative Normal play means the mod makes the game lighter than vanilla. Only what goes to the graphics card counts (textures, models, morph targets, masks); animations and world data load into system RAM, so they\'re shown as other data. Both are estimates from the files; use Measure VRAM for real numbers. Click a mod to see its heaviest files.')));}
+   p('note',b('Normal play'),' = extra VRAM because the mod replaces game files (loaded whenever those things are on screen). ',b('When used'),' = new clothing, cars, weapons or props, which only take VRAM while you wear, drive or spawn them. Each item counts in its heaviest look: a car with ten paint jobs shows one at a time, so the other nine aren\'t added. When used comes on top of Normal play. A negative Normal play means the mod makes the game lighter than vanilla. Only what goes to the graphics card counts (textures, models, morph targets, masks); animations and world data load into system RAM, so they\'re shown as other data. Both are estimates from the files; use Measure VRAM for real numbers. Click a mod to see its heaviest files.')));}
 
 function viewReport(R){
- const k=[h('p',{class:'note'},R.mods.length+' mod archive(s) \u00B7 scanned '+R.generated),cards(R),problems(R),budgetPanel(R)];
+ const k=[h('p',{class:'note'},R.mods.length+' mod archive(s) \u00B7 scanned '+R.generated),cards(R),problems(R),budgetPanel(R),looseRefs(R)];
  if((R.history||[]).length||(R.managerNotes||[]).length)k.push(h('details',{class:'panel'},h('summary',null,'Changes and sources'),h('pre',{class:'mono note'},[...R.managerNotes,...R.history].join('\n'))));
  k.push(tablePanel(R));return k}
 function renderView(){
@@ -403,27 +418,40 @@ function render(){
 // ---- apply budget fix ----
 async function openFix(){
  if(busy())return;
- const o={normal:true,newItems:'none'},err=errBox(),body=h('div',null,p('note','Working out what the fix would do...'));
+ // Start from the choices the current fix was made with (v0.6.0+ fixes say), so "apply again" is one press.
+ const made=S.report&&S.report.budgetFix&&S.report.budgetFix.options;
+ const o={normal:made?made.normal:true,newItems:made?(made.newItemsMax===1024?'1k':made.newItemsMax===2048?'2k':'none'):'none',extraRoom:made?made.extraRoom/2**30:0};
+ const err=errBox(),body=h('div',null,p('note','Working out what the fix would do...'));
  openDialog('Apply budget fix',h('div',null,body,err));
- let plan;try{plan=await api('POST','/api/plan',o)}catch(e){showErr(err,e.message);return}
- const canNormal=plan.current>plan.budget&&plan.normal.count>0;o.normal=canNormal;
- const normalWhy=canNormal?'':plan.current<=plan.budget?'Your mods already fit in your card\'s room, so nothing needs halving.':'No normal-play texture is big enough to halve.';
- const sumBox=h('div',{class:'sum','aria-live':'polite'}),apply=h('button',{class:'primary'},'Apply');
- let seq=0;
- const fill=pl=>{const c=pl.chosen,k=pl.keptSharp;put(sumBox,c.count>0?[b('This will shrink '+c.count.toLocaleString()+' texture(s)'),', write a file of about '+sz(c.writeBytes)+' and take '+fmtLeft(c.seconds)+'. Saves about '+sz(c.saves)+' of VRAM.']:'Nothing chosen yet. Tick or choose an option above.',
-  k&&k.mods>0?h('div',{class:'note'},k.mods+' mod(s) you marked Keep sharp are left alone ('+k.textures+' textures).'):null);apply.disabled=!(c.count>0)};
- const change=async()=>{const n=++seq;try{const pl=await api('POST','/api/plan',Object.assign({},o));if(n===seq){showErr(err,'');fill(pl)}}catch(e){showErr(err,e.message)}};
- const ni=(v,label,x)=>h('label',{class:'opt'+(x.count?'':' off')},h('input',{type:'radio',name:'ni',value:v,checked:o.newItems===v,disabled:v!=='none'&&!x.count,onchange:()=>{o.newItems=v;change()}}),h('span',null,b(label),v==='none'?'The textures stay as the mod authors made them.':x.count?x.count.toLocaleString()+' texture(s), saves about '+sz(x.saves):'Nothing to shrink'));
- put(body,
-  p('','This adds ',b('one new file'),' with smaller copies of the heaviest textures. ',b('Your mods are never changed.'),' "Undo budget fix" removes the file and everything is as it was before.'),
-  S.mo2&&S.mo2.instance?p('note','With Mod Organizer 2 it is saved as a mod named "VRAM RipperDoc Budget Fix"; after it is done you press F5 in MO2 and tick it.'):null,
-  h('label',{class:'opt'+(canNormal?'':' off')},h('input',{type:'checkbox',checked:canNormal,disabled:!canNormal,onchange:e=>{o.normal=e.target.checked;change()}}),h('span',null,b(canNormal?'Halve '+plan.normal.count.toLocaleString()+' textures so your mods fit: saves '+sz(plan.normal.saves):'Normal play'),canNormal?'During normal play they then use about '+sz(plan.afterPlan)+(plan.afterPlan<=plan.budget?', which fits.':', still more than the room you have.'):normalWhy)),
-  h('fieldset',{style:'margin-top:12px'},h('legend',null,'New clothing, cars and props'),
-   p('note','These only use VRAM while you wear, drive or spawn them. 1K looks softer up close, but that is hard to see on small screens like the Steam Deck\'s.'),
-   ni('none','Leave them as they are',{count:1,saves:0}),ni('2k','Shrink to 2K',plan.newItems2k),ni('1k','Shrink to 1K',plan.newItems1k)),
-  sumBox,h('div',{class:'dbtns'},h('button',{onclick:closeDialog},'Cancel'),apply));
+ const apply=h('button',{class:'primary','data-fid':'fix-apply'},'Apply');
  apply.addEventListener('click',async()=>{apply.disabled=true;try{await api('POST','/api/fix',Object.assign({},o));closeDialog();ui.dismissed=null;await refresh()}catch(e){showErr(err,e.message);apply.disabled=false}});
- fill(plan);dlgFocus();if(!canNormal)change();}
+ let seq=0,first=true;
+ // Every choice changes the numbers of the others, so the whole window is drawn again from each answer.
+ const draw=plan=>{
+  const f=focusSave(),target=plan.target!=null?plan.target:plan.budget,xr=o.extraRoom,c=plan.chosen,k=plan.keptSharp;
+  const canNormal=plan.current>target&&plan.normal.count>0;
+  const normalWhy=plan.current<=target?(xr?'Your mods already leave that much room, so nothing needs halving.':'Your mods already fit in your card\'s room, so nothing needs halving.'):'No normal-play texture is big enough to halve.';
+  const ni=(v,label,x)=>h('label',{class:'opt'+(x.count?'':' off')},h('input',{type:'radio',name:'ni','data-fid':'ni:'+v,value:v,checked:o.newItems===v,disabled:v!=='none'&&!x.count,onchange:()=>{o.newItems=v;change()}}),h('span',null,b(label),v==='none'?'The textures stay as the mod authors made them.':x.count?x.count.toLocaleString()+' texture(s), saves about '+sz(x.saves):'Nothing to shrink'));
+  const room=g=>h('label',{class:'pick'},h('input',{type:'radio',name:'xr','data-fid':'xr:'+g,value:g,checked:xr===g,onchange:()=>{o.extraRoom=g;change()}}),g?'+'+g+' GB':'None');
+  put(body,
+   p('','This adds ',b('one new file'),' with smaller copies of the heaviest textures. ',b('Your mods are never changed.'),' "Undo budget fix" removes the file and everything is as it was before.'),
+   S.mo2&&S.mo2.instance?p('note','With Mod Organizer 2 it is saved as a mod named "VRAM RipperDoc Budget Fix"; after it is done you press F5 in MO2 and tick it.'):null,
+   h('label',{class:'opt'+(canNormal?'':' off')},h('input',{type:'checkbox','data-fid':'fix-normal',checked:canNormal&&o.normal,disabled:!canNormal,onchange:e=>{o.normal=e.target.checked;change()}}),
+    h('span',null,b(canNormal?'Halve '+plan.normal.count.toLocaleString()+' textures so your mods fit'+(xr?' with '+xr+' GB to spare':'')+': saves '+sz(plan.normal.saves):'Normal play'),
+     canNormal?'During normal play they then use about '+sz(plan.afterPlan)+(plan.afterPlan<=target?(xr?', which leaves that room.':', which fits.'):(xr?', still more than you are aiming for.':', still more than the room you have.')):normalWhy)),
+   h('fieldset',{style:'margin-top:12px'},h('legend',null,'New clothing, cars and props'),
+    p('note','These only use VRAM while you wear, drive or spawn them. 1K looks softer up close, but that is hard to see on small screens like the Steam Deck\'s. Icons are never shrunk.'),
+    ni('none','Leave them as they are',{count:1,saves:0}),ni('2k','Shrink to 2K',plan.newItems2k),ni('1k','Shrink to 1K',plan.newItems1k)),
+   h('fieldset',{style:'margin-top:12px'},h('legend',null,'Extra room (optional)'),
+    p('note','The room for your mods is an estimate. If the game still stutters or runs out of VRAM with the fix active, free more than the estimate asks for.'),
+    h('div',{class:'row'},[0,...(plan.extraRoomChoices||[0.5,1,2])].map(room))),
+   h('div',{class:'sum','aria-live':'polite'},c.count>0?[b('This will shrink '+c.count.toLocaleString()+' texture(s)'),', write a file of about '+sz(c.writeBytes)+' and take '+fmtLeft(c.seconds)+'. Saves about '+sz(c.saves)+' of VRAM.']:'Nothing to shrink with these choices. Choose an option above.',
+    k&&k.mods>0?h('div',{class:'note'},k.mods+' mod(s) you marked Keep sharp are left alone ('+k.textures+' textures).'):null),
+   h('div',{class:'dbtns'},h('button',{onclick:closeDialog},'Cancel'),apply));
+  apply.disabled=!(c.count>0);
+  if(first){first=false;dlgFocus()}else focusRestore(f)};
+ const change=async()=>{const n=++seq;try{const pl=await api('POST','/api/plan',Object.assign({},o));if(n===seq){showErr(err,'');draw(pl)}}catch(e){showErr(err,e.message)}};
+ await change();}
 
 // ---- measure VRAM ----
 function openMeasure(){const body=h('div');openDialog('Measure VRAM',body,()=>fillMeasure(body));fillMeasure(body);dlgFocus()}
@@ -487,6 +515,7 @@ const Demo=!DEMO?null:(()=>{
  const st=S0;
  if(name==='first'){st.report=null}
  if(name==='overbudget')over(st.report);
+ if(name==='reapply'){over(st.report);st.fix.found=true;st.report.budgetArchive='VRAM-RipperDoc-BudgetFix.archive';st.report.budgetFix={textures:212,manifest:true,stale:false,changed:[],removed:[],icons:[],after:Math.round(3.9*G),notCovered:37,notCoveredSaves:Math.round(.6*G),notCoveredList:['heavymod\\textures\\t0.xbm (HeavyOutfits)'],options:{normal:true,newItemsMax:2048,extraRoom:G}}}
  if(name==='stale'){over(st.report);st.fix.found=true;st.report.budgetArchive='VRAM-RipperDoc-BudgetFix.archive';st.report.budgetFix={textures:212,manifest:true,stale:true,why:'2 texture(s) changed since it was made, 1 mod was removed',changed:['HD_Textures: 0x01F4A2C9'],removed:['OldSkin']}}
  if(name==='nogame'){st.game={path:null,found:false}}
  if(name==='nomods'){st.report.mods=[];st.mo2.detected=['C:\\Modding\\MO2']}
@@ -502,9 +531,9 @@ const Demo=!DEMO?null:(()=>{
  const emitJob=j=>{st.busy=j;onJob(clone(j))};
  const run=(kind,phase,msg,total,secs,end)=>{let n=0;const id=setInterval(()=>{n++;if(n>=total){clearInterval(id);st.busy=null;end();refresh();return}
    emitJob(job(kind,phase,msg+': '+n+' / '+total,n,total,(total-n)*secs))},500)};
- const plan=o=>{const ov=name==='overbudget'||name==='stale'||name==='fixing',nc=ov?212:0,n2={count:640,saves:9*G},n1={count:1900,saves:11*G};
+ const plan=o=>{const ov=name==='overbudget'||name==='stale'||name==='fixing'||name==='reapply',xr=o.extraRoom||0,nc=ov?212+Math.round(xr*90):0,ns=ov?(1.9+xr)*G:0,n2={count:640,saves:9*G},n1={count:1900,saves:11*G};
   const x=o.newItems==='2k'?n2:o.newItems==='1k'?n1:{count:0,saves:0},c=(o.normal?nc:0)+x.count,k=st.keepSharp.length;
-  return{budget:st.report.budget.budget,current:st.report.budget.current,afterPlan:st.report.budget.afterPlan,fits:!ov,normal:{count:nc,saves:ov?1.9*G:0},newItems2k:n2,newItems1k:n1,chosen:{count:c,saves:(o.normal&&ov?1.9*G:0)+x.saves,writeBytes:c*2.8*2**20,seconds:c*.11,perMod:[]},keptSharp:{mods:k,textures:k*12}}};
+  return{budget:st.report.budget.budget,target:st.report.budget.budget-xr*G,current:st.report.budget.current,afterPlan:st.report.budget.afterPlan-xr*G,fits:!ov,extraRoomChoices:[0.5,1,2],normal:{count:nc,saves:ns},newItems2k:n2,newItems1k:n1,chosen:{count:c,saves:(o.normal?ns:0)+x.saves,writeBytes:c*2.8*2**20,seconds:c*.11,perMod:[]},keptSharp:{mods:k,textures:k*12}}};
  const endScan=()=>{st.report=name==='nomods'&&!st.mo2.instance?(()=>{const r=rep();r.mods=[];return r})():rep();if(name==='overbudget'||name==='stale'||name==='fixing')over(st.report);st.lastJob={kind:'scan',ok:true,message:'Scan finished: '+st.report.mods.length+' mods in 2 seconds.',finishedAt:new Date().toISOString(),details:{mods:st.report.mods.length,seconds:2}}};
  const endFix=()=>{st.fix.found=true;st.report.budgetArchive='VRAM-RipperDoc-BudgetFix.archive';st.lastJob={kind:'fix',ok:true,message:'Done: 852 textures halved.',finishedAt:new Date().toISOString(),details:{path:'x',textures:852,saved:10.9*G,skipped:3,mo2Mod:false,nextSteps:['Start the game as usual: the new file loads by itself.','If you use Mod Organizer 2, press F5 and tick "VRAM RipperDoc Budget Fix".']}}};
  if(name==='scanning')setTimeout(()=>run('scan','scanning','Scanning mods',6,2,endScan),4000);

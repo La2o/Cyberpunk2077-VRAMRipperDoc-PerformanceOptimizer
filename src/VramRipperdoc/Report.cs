@@ -25,10 +25,15 @@ public static class Report
         if (r.FixCheck is { Stale: true } stale)
         {
             Console.WriteLine($"  ! The budget fix is out of date: {stale.Describe()}.");
-            Console.WriteLine("    It shows old copies of those textures. Run \"2 - Apply budget fix\" again to rebuild it, or \"Undo budget fix\" to remove it.");
+            Console.WriteLine("    Run \"2 - Apply budget fix\" again to rebuild it, or \"Undo budget fix\" to remove it.");
         }
         else if (r.FixCheck is { HasManifest: false })
             Console.WriteLine("  (This fix was made by v0.3.1 or older, which can't tell whether your mods changed since. If you updated texture mods, run \"2 - Apply budget fix\" again.)");
+        else if (r.FixCheck is { NotCovered.Count: > 0 } left)
+        {
+            Console.WriteLine($"  ! {left.NotCovered.Count:N0} texture(s) aren't in the budget fix yet: you added mods, or your settings leave less room, since it was made.");
+            Console.WriteLine($"    Run \"2 - Apply budget fix\" again to include them (about {Size(left.NotCoveredSaves)} more to save).");
+        }
         Console.WriteLine();
         Console.WriteLine($"Extra VRAM your mods use during normal play:   {Size(r.AlwaysDelta)}");
         Console.WriteLine($"  (they replace game files, so they load whenever those things are on screen)");
@@ -56,8 +61,13 @@ public static class Report
         if (plan.Current <= plan.Budget)
             Console.WriteLine("  -> OK: your mods fit. Nothing needs fixing.");
         else if (r.BudgetArchive != null)
-            Console.WriteLine($"  -> Without the budget fix you'd be {Size(plan.Current - plan.Budget)} over. The fix is active and brings this to about {Size(plan.AfterPlan)}."
-                + (plan.Reachable ? " You're within budget." : " To go lower, remove or swap the heaviest mod at the top of the list."));
+        {
+            long after = AfterFix(r, plan);
+            Console.WriteLine($"  -> Without the budget fix you'd be {Size(plan.Current - plan.Budget)} over. The fix is active and brings this to about {Size(after)}."
+                + (after <= plan.Budget ? " You're within budget."
+                    : r.FixCheck is { NotCovered.Count: > 0 } ? " Apply the fix again to shrink the rest."
+                    : " To go lower, remove or swap the heaviest mod at the top of the list."));
+        }
         else
         {
             Console.WriteLine($"  -> Over by {Size(plan.Current - plan.Budget)}. " + (plan.Reachable
@@ -72,6 +82,12 @@ public static class Report
             Console.WriteLine($"  Lower settings also give mods more room (estimates): {tips}.");
         foreach (var l in r.HistoryDiff) Console.WriteLine(l);
     }
+
+    /// <summary>
+    /// Normal-play VRAM your mods add with the fix that is there now. Falls back to what a fresh fix would reach when
+    /// the fix doesn't say how far it halved (made by v0.3.1 or older).
+    /// </summary>
+    public static long AfterFix(ScanResult r, BudgetPlan plan) => r.FixCheck?.NormalSaves is { } saved ? plan.Current - saved : plan.AfterPlan;
 
     /// <summary>"Texture Quality Medium +0.8 GB, frame generation off +0.5 GB", or "" when the settings are unknown.</summary>
     public static string SettingsTips(ScanResult r) => r.Settings is { Width: > 0 } s
@@ -98,6 +114,17 @@ public static class Report
             if (fc.Stale) w.WriteString("why", fc.Describe());
             w.WriteStartArray("changed"); foreach (var x in fc.Changed) w.WriteStringValue(x); w.WriteEndArray();
             w.WriteStartArray("removed"); foreach (var x in fc.Removed) w.WriteStringValue(x); w.WriteEndArray();
+            w.WriteStartArray("icons"); foreach (var x in fc.Icons) w.WriteStringValue(x); w.WriteEndArray();
+            // after: normal-play VRAM with the fix as it is. notCovered: what applying it again would add (mods added since).
+            w.WriteNumber("after", AfterFix(r, plan));
+            w.WriteNumber("notCovered", fc.NotCovered.Count); w.WriteNumber("notCoveredSaves", fc.NotCoveredSaves);
+            w.WriteStartArray("notCoveredList"); foreach (var x in fc.NotCovered.Take(100)) w.WriteStringValue(x); w.WriteEndArray();
+            if (fc.Options is { } made)
+            {
+                w.WriteStartObject("options");
+                w.WriteBoolean("normal", made.Normal); w.WriteNumber("newItemsMax", made.NewItemsMax); w.WriteNumber("extraRoom", made.ExtraRoom);
+                w.WriteEndObject();
+            }
             w.WriteEndObject();
         }
         w.WriteNumber("totalDelta", r.TotalDelta);
@@ -136,6 +163,7 @@ public static class Report
             w.WriteNumber("textures", m.Textures); w.WriteNumber("meshes", m.Meshes); w.WriteNumber("tris", m.Tris0);
             w.WriteNumber("overrides", m.Overrides); w.WriteNumber("shadowed", m.Shadowed); w.WriteNumber("shadowedDisk", m.ShadowedDisk);
             w.WriteNumber("missing", m.Missing); w.WriteNumber("flagged", m.FlagCount); w.WriteNumber("ram", m.DataBytes);
+            if (m.SpareLookBytes != 0) w.WriteNumber("spareLooks", m.SpareLookBytes);
             w.WriteStartArray("assets");
             foreach (var a in m.Assets.OrderByDescending(a => a.Flags.Count > 0 && a.Loads && a.MissingImports.Count > 0)
                          .ThenByDescending(a => Math.Abs(a.DeltaGpu)).ThenByDescending(a => a.DataBytes).ThenByDescending(a => a.Flags.Count).Take(maxAssetsPerMod))
@@ -150,8 +178,10 @@ public static class Report
                 {
                     w.WriteNumber("w", a.Width); w.WriteNumber("h", a.Height); w.WriteNumber("mips", a.Mips);
                     w.WriteString("fmt", a.Compression);
+                    if (a.IsUi) w.WriteBoolean("ui", true);
                 }
-                if (a.Kind == AssetKind.Mesh) { w.WriteNumber("tris", a.Tris0); w.WriteNumber("lods", a.LodCount); }
+                if (a.Kind == AssetKind.Mesh) { w.WriteNumber("tris", a.Tris0); w.WriteNumber("lods", a.LodCount); if (a.Looks != null) w.WriteNumber("looks", a.Looks.Count); }
+                if (a.SpareLook) w.WriteBoolean("spareLook", true);
                 w.WriteBoolean("override", a.OverridesBase);
                 w.WriteBoolean("always", a.AlwaysLoaded);
                 if (a.ShadowedBy != null) w.WriteString("shadowedBy", a.ShadowedBy);
@@ -216,47 +246,64 @@ pre{white-space:pre-wrap;font:12px ui-monospace,Consolas,monospace;color:var(--d
 </style></head><body><main>
 <h1><b>VRAM RipperDoc</b> &mdash; Performance Optimizer</h1><p class="sub" id="sub"></p>
 <div class="cards" id="cards"></div>
+<div class="panel" id="probs" style="border-color:var(--hot)" hidden></div>
 <div class="panel" id="budget"></div>
+<div class="panel" id="loose" hidden></div>
 <div class="panel" id="hist" hidden></div>
 <div class="panel"><h2>Your mods, heaviest first</h2>
 <div class="tools"><input id="q" placeholder="Filter mods or files..."><label class="note"><input type="checkbox" id="grp" style="width:auto;margin:0 4px 0 0">Group by installed mod</label><label class="note" title="Use the whole window width"><input type="checkbox" id="wide" style="width:auto;margin:0 4px 0 0">Wide view</label><button id="copy">Copy summary for a support post</button></div>
 <table id="mods"></table>
-<p class="note"><b>Normal play</b> = extra VRAM because the mod replaces game files (loaded whenever those things are on screen). <b>When used</b> = new clothing, cars, weapons or props, which only take VRAM while you wear, drive or spawn them, so these never all load at once. <b>When used comes on top of Normal play</b> (it is not instead of it). A <b>negative</b> Normal play means the mod makes the game lighter than vanilla, for example smaller textures or removed objects. Only what goes to the graphics card counts (textures, models, morph targets, masks); animations such as lipsync, appearance and world data load into system RAM, so they're shown as other data instead. Both are estimates from the files; double-click <i>3 - Measure VRAM in game</i> for real numbers. Click a row to see its heaviest files.</p></div>
+<p class="note"><b>Normal play</b> = extra VRAM because the mod replaces game files (loaded whenever those things are on screen). <b>When used</b> = new clothing, cars, weapons or props, which only take VRAM while you wear, drive or spawn them, so these never all load at once. Each item counts in its heaviest look: a car with ten paint jobs shows one at a time, so the other nine aren't added. <b>When used comes on top of Normal play</b> (it is not instead of it). A <b>negative</b> Normal play means the mod makes the game lighter than vanilla, for example smaller textures or removed objects. Only what goes to the graphics card counts (textures, models, morph targets, masks); animations such as lipsync, appearance and world data load into system RAM, so they're shown as other data instead. Both are estimates from the files; double-click <i>3 - Measure VRAM in game</i> for real numbers. <b>Missing</b> = files a mod points at that aren't installed, which is usually harmless (see the note above). Click a row to see its heaviest files.</p></div>
 </main><script>
 const D=/*DATA*/null;
 const $=s=>document.querySelector(s),esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const sz=b=>{const s=b<0?'-':'',v=Math.abs(b);return v>=2**30?s+(v/2**30).toFixed(2)+' GB':v>=2**20?s+(v/2**20).toFixed(1)+' MB':v>=1024?s+(v/1024).toFixed(0)+' KB':s+v+' B'};
 $('#sub').textContent=`${D.mods.length} mod archive(s) · ${D.gameDir} · ${D.generated} · v${D.version}`+(D.settings?` · ${D.settings}`:'')+(D.oodle?'':' · Oodle missing: sizes only');
 const flagged=D.mods.reduce((a,m)=>a+m.flagged,0),dead=D.mods.reduce((a,m)=>a+m.shadowedDisk,0),miss=D.mods.reduce((a,m)=>a+m.missing,0);
-$('#cards').innerHTML=[['Extra VRAM in normal play',sz(D.alwaysDelta)],['New items (only when used)',sz(D.whenUsedDelta)],['GPU',D.gpu?sz(D.gpuVram):'unknown'],['Room for mods (normal play)',sz(D.budget.budget)],['Flagged files',flagged.toLocaleString()],['Missing references',miss.toLocaleString()],['Dead weight (never loads)',sz(dead)],['Other data (system RAM, not VRAM)',sz(D.ramBytes||0)]]
+$('#cards').innerHTML=[['Extra VRAM in normal play',sz(D.alwaysDelta)],['New items (only when used)',sz(D.whenUsedDelta)],['GPU',D.gpu?sz(D.gpuVram):'unknown'],['Room for mods (normal play)',sz(D.budget.budget)],['Flagged files',flagged.toLocaleString()],['References to missing files',miss.toLocaleString()],['Dead weight (never loads)',sz(dead)],['Other data (system RAM, not VRAM)',sz(D.ramBytes||0)]]
  .map(([k,v])=>`<div class="card"><div class="k">${k}</div><div class="v">${v}</div></div>`).join('');
 const B=D.budget,stepsAlways=B.steps.filter(s=>s.always).length;let bh=`<h2>Budget</h2>`;
 if(D.budgetArchive)bh+=`<p class="ok">The budget fix is active (<code>${esc(D.budgetArchive)}</code>). To remove it, double-click <b>Undo budget fix.bat</b>.</p>`;
-const F=D.budgetFix;
-if(F&&F.stale)bh+=`<p class="warn">The budget fix is out of date: ${esc(F.why)}. It shows old copies of those textures. <b>Double-click <i>2 - Apply budget fix</i> again</b> to rebuild it, or <i>Undo budget fix</i> to remove it.</p><details><summary class="note">Which textures</summary><pre>${esc([...F.changed.map(x=>'updated since: '+x),...F.removed.map(x=>'mod removed: '+x)].slice(0,100).join('\n'))}</pre></details>`;
+const F=D.budgetFix,after=F&&F.after!=null?F.after:B.afterPlan;
+if(F&&F.stale)bh+=`<p class="warn">The budget fix is out of date: ${esc(F.why)}. <b>Double-click <i>2 - Apply budget fix</i> again</b> to rebuild it, or <i>Undo budget fix</i> to remove it.</p><details><summary class="note">Which textures</summary><pre>${esc([...F.changed.map(x=>'updated since: '+x),...F.removed.map(x=>'mod removed: '+x),...(F.icons||[]).map(x=>'icon: '+x)].slice(0,100).join('\n'))}</pre></details>`;
 else if(F&&!F.manifest)bh+=`<p class="note">This fix was made by v0.3.1 or older, which can't tell whether your mods changed since. If you updated texture mods, run <i>2 - Apply budget fix</i> again.</p>`;
+else if(F&&F.notCovered)bh+=`<p class="warn">${F.notCovered.toLocaleString()} texture(s) aren't in the budget fix yet: you added mods, or your settings leave less room, since it was made. <b>Double-click <i>2 - Apply budget fix</i> again</b> to include them (about ${sz(F.notCoveredSaves)} more to save).</p><details><summary class="note">Which textures</summary><pre>${esc((F.notCoveredList||[]).join('\n'))}</pre></details>`;
 if(B.current<=B.budget)bh+=`<p class="ok">During normal play your mods add about <b>${sz(B.current)}</b> on top of the game itself. At your settings your card has room for ${sz(B.budget)} of that, so nothing needs fixing.</p>`;
-else if(D.budgetArchive)bh+=`<p>Without the fix your mods would add about ${sz(B.current)} on top of the game during normal play, ${sz(B.current-B.budget)} more than the ${sz(B.budget)} of room your card has. The fix brings this to about <b>${sz(B.afterPlan)}</b>${B.afterPlan<=B.budget?', which fits':'; to go lower, remove or swap the heaviest mod below'}.</p>`;
+else if(D.budgetArchive)bh+=`<p>Without the fix your mods would add about ${sz(B.current)} on top of the game during normal play, ${sz(B.current-B.budget)} more than the ${sz(B.budget)} of room your card has. The fix brings this to about <b>${sz(after)}</b>${after<=B.budget?', which fits':F&&F.notCovered?'; apply the fix again to shrink the rest':'; to go lower, remove or swap the heaviest mod below'}.</p>`;
 else{bh+=`<p class="warn">During normal play your mods add about <b>${sz(B.current)}</b> on top of the game itself, but at your settings your card only has room for ${sz(B.budget)}: ${sz(B.current-B.budget)} too much.</p>`;
  bh+=B.afterPlan<=B.budget?`<p>Halving ${stepsAlways} texture(s) fixes it. <b>To apply: double-click <i>2 - Apply budget fix.bat</i></b>. It adds one extra file and never changes your mods; <i>Undo budget fix.bat</i> removes it.</p>`:`<p>Halving the biggest textures gets you to ${sz(B.afterPlan)}. To go lower, remove or swap the heaviest mod at the top of the table below. <b>To apply what can be done: double-click <i>2 - Apply budget fix.bat</i></b>.</p>`;}
 if(B.current>B.budget&&B.tips)bh+=`<p>Lower settings also give mods more room (estimates): ${esc(B.tips)}.</p>`;
 bh+=`<p class="note">New items add up to ${sz(B.whenUsed)} if every one of them were used at once, which never happens, so they don't count against this room. <i>2 - Apply budget fix</i> can also shrink their big textures to 2K or 1K if you say yes when it asks.</p>`;
 if(B.steps.length)bh+=`<details><summary class="note">Show the ${B.steps.length} texture(s) the fix would halve</summary><table><tr><th class="l">Mod</th><th class="l">File</th><th class="l">Type</th><th>Now</th><th>After</th><th>Saves</th></tr>`+B.steps.slice(0,60).map(s=>`<tr><td class="l">${esc(s.mod)}</td><td class="l name" title="${esc(s.asset)}">${esc(s.asset)}</td><td class="l">${s.always?'normal play':'new item'}</td><td>${s.from}px</td><td>${s.to}px</td><td>${sz(s.saves)}</td></tr>`).join('')+'</table>'+(B.steps.length>60?`<p class="note">+${B.steps.length-60} more in the JSON report</p>`:'')+'</details>';
 $('#budget').innerHTML=bh+`<p class="note">How the room for mods is worked out: ${esc(B.why)}.</p>`;
+// Problems: what really needs doing. Files that mods point at but nobody has are a calmer note of their own.
+const broken=D.mods.filter(m=>m.error);let ph='';
+if(broken.length)ph+=`<p><b>Broken archives (${broken.length}):</b> the game can't read these. Reinstall or remove those mods.</p><details${broken.length<=3?' open':''}><summary class="note">Show the list</summary><pre>${esc(broken.map(m=>m.name+': '+m.error).join('\n'))}</pre></details>`;
+if(F&&F.stale)ph+=`<p><b>The budget fix is out of date.</b> See Budget below.</p>`;
+if(!D.oodle)ph+=`<p><b>Texture sizes are estimates:</b> the game's decompression library was not found, so only file sizes are known.</p>`;
+if(ph){$('#probs').hidden=false;$('#probs').innerHTML='<h2>Problems</h2>'+ph;}
+const lm=D.mods.filter(m=>m.missing>0);
+if(lm.length){const names=m=>[...new Set(m.assets.flatMap(a=>a.missing||[]))],cnt=new Map();
+ for(const m of lm)for(const x of names(m))cnt.set(x,(cnt.get(x)||0)+1);
+ const top=[...cnt].filter(e=>e[1]>1).sort((a,b)=>b[1]-a[1]).slice(0,5);
+ $('#loose').hidden=false;
+ $('#loose').innerHTML=`<h2>Mods that point at files you don't have (${lm.length})</h2><p>Usually harmless. Mod authors often leave references to files they never shipped, or that a game update removed, and the game skips them. It only matters when a mod looks wrong in game (an invisible part, a black or pink texture): then check on its mod page that you have everything it needs.</p>`
+  +(top.length?`<p class="note">Most often: ${top.map(([x,c])=>`<code>${esc(x)}</code> (${c} archives)`).join(' &nbsp; ')}</p>`:'')
+  +`<details><summary class="note">Show the list (${lm.length})</summary><pre>${esc(lm.map(m=>{const n=names(m);return m.name+': '+m.missing+' file(s)'+(n.length?'\n   '+n.slice(0,6).join('\n   ')+(n.length>6?'\n   and '+(n.length-6)+' more':''):'')}).join('\n'))}</pre></details>`;}
 if(D.history.length||D.managerNotes.length){$('#hist').hidden=false;$('#hist').innerHTML=`<h2>Changes &amp; sources</h2><pre>${esc([...D.managerNotes,...D.history].join('\n'))}</pre>`;}
 const cols=[['priority','#'],['name','Mod archive','l'],['always','Normal play'],['bar',''],['whenUsed','+ When used'],['textures','Tex'],['meshes','Mesh'],['tris','Tris LOD0','opt'],['overrides','Overrides','opt'],['shadowed','Never loads','opt'],['missing','Missing'],['flagged','Flags']];
 let sortK='always',sortD=-1,open=new Set();
-function groups(){const g=new Map();for(const m of D.mods){const k=m.package||m.name;if(!g.has(k))g.set(k,{name:k,package:m.package,nexusId:m.nexusId,manager:m.manager,priority:m.priority,source:m.source,disk:0,delta:0,always:0,whenUsed:0,textures:0,meshes:0,tris:0,overrides:0,shadowed:0,missing:0,flagged:0,ram:0,assets:[],archives:[]});
- const x=g.get(k);for(const f of['disk','delta','always','whenUsed','textures','meshes','tris','overrides','shadowed','missing','flagged','ram'])x[f]+=m[f]||0;x.assets.push(...m.assets);x.archives.push(m.name);if(m.error)x.error=m.error;}
+function groups(){const g=new Map();for(const m of D.mods){const k=m.package||m.name;if(!g.has(k))g.set(k,{name:k,package:m.package,nexusId:m.nexusId,manager:m.manager,priority:m.priority,source:m.source,disk:0,delta:0,always:0,whenUsed:0,textures:0,meshes:0,tris:0,overrides:0,shadowed:0,missing:0,flagged:0,ram:0,spareLooks:0,assets:[],archives:[]});
+ const x=g.get(k);for(const f of['disk','delta','always','whenUsed','textures','meshes','tris','overrides','shadowed','missing','flagged','ram','spareLooks'])x[f]+=m[f]||0;x.assets.push(...m.assets);x.archives.push(m.name);if(m.error)x.error=m.error;}
  for(const x of g.values())x.assets.sort((a,b)=>Math.abs(b.delta)-Math.abs(a.delta));return[...g.values()];}
 function render(){const q=$('#q').value.toLowerCase(),list=$('#grp').checked?groups():D.mods,max=Math.max(1,...list.map(m=>m.always));
  const rows=list.filter(m=>!q||m.name.toLowerCase().includes(q)||(m.package||'').toLowerCase().includes(q)||m.assets.some(a=>a.name.toLowerCase().includes(q))).sort((a,b)=>((a[sortK]>b[sortK]?1:a[sortK]<b[sortK]?-1:0)*sortD)||(b.delta-a.delta));
  let h='<tr>'+cols.map(([k,t,c])=>`<th class="${c||''}" data-k="${k}">${t}${sortK===k?(sortD<0?' ▾':' ▴'):''}</th>`).join('')+'</tr>';
  for(const m of rows){const link=m.nexusId?` · <a href="https://www.nexusmods.com/cyberpunk2077/mods/${m.nexusId}" target="_blank" rel="noopener">Nexus #${m.nexusId}</a>`:'';
   const pkg=m.package&&m.package!==m.name&&!(m.source||"").includes(m.package)?` · ${esc(m.manager||'')}: ${esc(m.package)}`:'';
-  h+=`<tr class="mod" data-n="${esc(m.name)}"><td>${m.priority}</td><td class="l">${esc(m.name)}${m.error?` <span class="tag">${esc(m.error)}</span>`:''}<div class="note">${esc(m.source)} · ${sz(m.disk)} on disk${m.archives?` · ${m.archives.length} archive(s)`:pkg}${link}${m.community?` · ${esc(m.community)}`:''}${m.ram>=50*2**20?` · ${sz(m.ram)} other data (system RAM, not VRAM)`:''}</div></td><td class="${m.always<0?'neg':m.always>2**30?'hot':''}">${sz(m.always)}</td><td><div class="bar"><i style="width:${Math.max(0,m.always)/max*100}%"></i></div></td><td class="note">${sz(m.whenUsed)}</td><td>${m.textures}</td><td>${m.meshes}</td><td class="opt">${m.tris.toLocaleString()}</td><td class="opt">${m.overrides}</td><td class="opt">${m.shadowed}</td><td class="${m.missing?'hot':''}">${m.missing}</td><td class="${m.flagged?'hot':''}">${m.flagged}</td></tr>`;
+  h+=`<tr class="mod" data-n="${esc(m.name)}"><td>${m.priority}</td><td class="l">${esc(m.name)}${m.error?` <span class="tag">${esc(m.error)}</span>`:''}<div class="note">${esc(m.source)} · ${sz(m.disk)} on disk${m.archives?` · ${m.archives.length} archive(s)`:pkg}${link}${m.community?` · ${esc(m.community)}`:''}${m.ram>=50*2**20?` · ${sz(m.ram)} other data (system RAM, not VRAM)`:''}${m.spareLooks?` · ${sz(m.spareLooks)} in other looks of the same items (one look shows at a time)`:''}</div></td><td class="${m.always<0?'neg':m.always>2**30?'hot':''}">${sz(m.always)}</td><td><div class="bar"><i style="width:${Math.max(0,m.always)/max*100}%"></i></div></td><td class="note">${sz(m.whenUsed)}</td><td>${m.textures}</td><td>${m.meshes}</td><td class="opt">${m.tris.toLocaleString()}</td><td class="opt">${m.overrides}</td><td class="opt">${m.shadowed}</td><td>${m.missing}</td><td class="${m.flagged?'hot':''}">${m.flagged}</td></tr>`;
   if(open.has(m.name)){h+=`<tr class="detail"><td colspan="${cols.length}"><table><tr><th class="l">File</th><th class="l">Kind</th><th>Size</th><th>GPU</th><th>+VRAM</th><th class="l">Notes</th></tr>`+
-   m.assets.slice(0,60).map(a=>`<tr><td class="l name" title="${esc(a.name)}">${esc(a.name)}</td><td class="l">${esc(a.class||a.kind)}</td><td>${a.kind==='Texture'?`${a.w}×${a.h} ${a.mips}mip ${esc((a.fmt||'').replace('TCM_',''))}`:a.kind==='Mesh'?`${a.tris.toLocaleString()} tris · ${a.lods} LOD`:''}</td><td>${sz(a.gpu)}</td><td class="${a.delta<0?'neg':''}">${sz(a.delta)}</td><td class="l">${a.gpu===0&&a.ram>0?`<span class="tag dead">${sz(a.ram)} in system RAM, not VRAM</span>`:''}${a.override?'<span class="tag dead">replaces a game file</span>':a.always?'<span class="tag dead">used by a replaced file</span>':'<span class="tag dead">new item</span>'}${a.flags.map(f=>`<span class="tag ${a.shadowedBy?'dead':''}">${esc(f)}</span>`).join('')}</td></tr>`).join('')+
+   m.assets.slice(0,60).map(a=>`<tr><td class="l name" title="${esc(a.name)}">${esc(a.name)}</td><td class="l">${esc(a.class||a.kind)}</td><td>${a.kind==='Texture'?`${a.w}×${a.h} ${a.mips}mip ${esc((a.fmt||'').replace('TCM_',''))}`:a.kind==='Mesh'?`${a.tris.toLocaleString()} tris · ${a.lods} LOD`:''}</td><td>${sz(a.gpu)}</td><td class="${a.delta<0?'neg':''}">${sz(a.delta)}</td><td class="l">${a.gpu===0&&a.ram>0?`<span class="tag dead">${sz(a.ram)} in system RAM, not VRAM</span>`:''}${a.override?'<span class="tag dead">replaces a game file</span>':a.always?'<span class="tag dead">used by a replaced file</span>':'<span class="tag dead">new item</span>'}${a.ui?'<span class="tag dead">icon or screen graphic: the fix never shrinks it</span>':''}${a.spareLook?'<span class="tag dead">another look of an item: not in When used</span>':''}${a.looks?`<span class="tag dead">${a.looks} looks</span>`:''}${a.flags.map(f=>`<span class="tag ${a.shadowedBy?'dead':''}">${esc(f)}</span>`).join('')}</td></tr>`).join('')+
    `</table>${m.assets.length>60?`<p class="note">${m.assets.length-60} more in the JSON report</p>`:''}</td></tr>`;}}
  if(!rows.length)h+=`<tr><td class="l" colspan="${cols.length}">${D.mods.length?'No mods match the filter.':'No .archive mods found in archive/pc/mod or mods/*/archives.'}</td></tr>`;
  $('#mods').innerHTML=h;}

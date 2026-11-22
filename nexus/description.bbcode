@@ -17,7 +17,7 @@ Changed your mind? Double-click [b]Undo budget fix.bat[/b] and everything is bac
 [list]
 [*][b]Which mods are heaviest[/b]: how much extra VRAM each mod adds compared to the normal game, biggest first
 [*][b]Why[/b]: oversized textures (4K/8K), very detailed models that never simplify at a distance, textures saved in wasteful formats
-[*][b]Broken or missing[/b]: corrupt downloads, and mods that need another mod you haven't installed (a common cause of crashes and invisible items)
+[*][b]Broken or missing[/b]: corrupt downloads, and files a mod points at that you don't have (usually harmless leftovers, sometimes a requirement you haven't installed)
 [*][b]Wasted files[/b]: files that never load because another mod overrides them, files identical to the normal game, and duplicates across mods
 [*][b]Which installed mod each file belongs to[/b] (works with Vortex and Mod Organizer 2), with a link to its Nexus page
 [*][b]Room for mods[/b]: how much VRAM your mods can add [i]on top of the game itself[/i] on your graphics card at your in-game settings, and which setting changes give more room
@@ -27,8 +27,8 @@ Changed your mind? Double-click [b]Undo budget fix.bat[/b] and everything is bac
 [list]
 [*]Each mod gets two numbers. [b]Normal play[/b] is the extra VRAM it adds because it replaces game files, so it's loaded whenever those things are on screen; this is what counts against your budget. [b]When used[/b] is for new clothing, cars, weapons and props, which only take VRAM while you wear, drive or spawn them.
 [*]Mods at the top of the table cost the most during normal play. Click a mod to see its heaviest files.
-[*][color=#ff4d6d]Red numbers[/color] are worth a look: flags, missing files, or being over budget.
-[*]Over budget? The simplest fix is often the [b]1K or 2K version[/b] of a big texture mod, if the author offers one. Otherwise use [b]Apply budget fix[/b] in the app (or [b]2 - Apply budget fix[/b]). Mods you tick under [b]Keep sharp[/b] are never shrunk.
+[*][color=#ff4d6d]Red numbers[/color] are worth a look: flags, or being over budget.
+[*]Over budget? The simplest fix is often the [b]1K or 2K version[/b] of a big texture mod, if the author offers one. Otherwise use [b]Apply budget fix[/b] in the app (or [b]2 - Apply budget fix[/b]). Mods you tick under [b]Keep sharp[/b] are never shrunk, and neither are icons. If the game still stutters with the fix active, apply it again with [b]Extra room[/b] (+0.5, +1 or +2 GB) to free more than the estimate asks for.
 [*]Need help with a crash or stutter? Click [b]Copy summary for a support post[/b] and paste it into your post.
 [/list]
 
@@ -53,7 +53,7 @@ Fixed in v0.2.7, please update. Older versions accidentally loaded the game's mo
 Vortex puts tools like this into its staging folder first and only copies them to the game when the mod is [b]enabled[/b]. Enable it in Vortex's mod list (after clicking [i]Yes, Install To Staging Anyway[/i] on the "Fallback Installer" message). Or skip Vortex: download manually and extract the zip anywhere.
 
 [b]The report says a mod has missing files, but it works fine in game.[/b]
-Up to v0.5.0 some files the game does find were reported as missing: files that ArchiveXL (or another RED4ext plugin) brings in its own folder, paths ArchiveXL creates with resource links and copies, and paths written with extra slashes. Since v0.5.1 these count as present. Up to v0.5.2 two more harmless cases were reported: references left empty or set to "none", and the spare slots of item icon atlases that still point at a template's icons (only one slot is needed). Since v0.5.3 these don't count either. If a mod still shows missing files, the report lists their names: usually a requirement or an optional part isn't installed. If you're sure it is, post the names in the comments.
+Up to v0.5.0 some files the game does find were reported as missing: files that ArchiveXL (or another RED4ext plugin) brings in its own folder, paths ArchiveXL creates with resource links and copies, and paths written with extra slashes. Since v0.5.1 these count as present. Up to v0.5.2 two more harmless cases were reported: references left empty or set to "none", and the spare slots of item icon atlases that still point at a template's icons (only one slot is needed). Since v0.5.3 these don't count either, and since v0.6.0 neither do per-language lipsync files and paths on the mod author's own PC. What is left is listed apart, as "Mods that point at files you don't have": the game skips such references, so they are usually harmless leftovers of the mod's author. They only matter when a mod looks wrong in game (an invisible part, a black or pink texture): then check its mod page for requirements.
 
 [b]The mod list is too narrow, or I have to scroll sideways.[/b]
 Since v0.5.1 the report and the app use more of the window, wrap long mod names, and hide the minor columns on small screens. Tick [i]Wide view[/i] above the mod list to use the whole width; it's remembered.
@@ -80,7 +80,7 @@ The room for mods (called "budget" before v0.2.9) is not your total or free VRAM
 [b]Normal play[/b] is what the mod costs whenever the things it replaces are on screen. [b]When used[/b] comes [i]on top of that[/i], only while you wear, drive or spawn the mod's new items. Example: a mod showing 11 MB normal play / 1.09 GB when used costs 11 MB most of the time, and up to about 1.1 GB more while its new items are in use. A [b]negative[/b] Normal play number means the mod makes the game [i]lighter[/i] than vanilla, for example with smaller textures or by removing objects from the world.
 
 [b]My "When used" total is huge (hundreds of GB). Is my game about to explode?[/b]
-No. That's every piece of clothing, every car and every prop you have installed, added up as if you used all of them at the same moment, which never happens. The game only loads the ones you're wearing, driving or looking at. That's why only [b]Normal play[/b] counts against your budget.
+No. That's every piece of clothing, every car and every prop you have installed, added up as if you used all of them at the same moment, which never happens. The game only loads the ones you're wearing, driving or looking at. That's why only [b]Normal play[/b] counts against your budget. Since v0.6.0 each item also counts in its heaviest look only: a car with ten paint jobs shows one at a time, so the other nine are listed apart instead of added.
 
 [b]Where is the fix file? I can't find it.[/b]
 After [b]2 - Apply budget fix[/b] finishes, it opens Explorer with the new file selected: [i]archive\pc\mod\!RipperDoc_Budget.archive[/i]. If it says "Nothing to fix", your mods already fit (answer Y to the second question to shrink new items' 4K textures to 2K or 1K anyway). [b]Mod Organizer 2 users:[/b] when you run it through MO2, the fix is saved as a new MO2 mod called [i]VRAM RipperDoc Budget Fix[/i]. Press F5 (Refresh) in MO2 and tick it to enable it.
@@ -96,11 +96,14 @@ Yes. It looks for your MO2 setup automatically. If no mods are found, [b]1 - Sca
 [b]Why does a car or mirror mod use so much?[/b]
 The numbers are the mod's own textures and 3D models. Vehicle mods often ship 4K textures for every part, which adds up fast. Click the mod in the report to see exactly which files are heavy.
 
+[b]A modded item's icon looks smaller.[/b]
+The budget fix of v0.5.3 and older could shrink icon textures, and icons are drawn at their pixel size. Since v0.6.0 icons are never shrunk, and a scan says when an older fix has some: apply the fix again and they're back to full size.
+
 [b]Will it raise my FPS?[/b]
 Only if you're running out of VRAM, which shows up as stutter and textures loading late. If you have plenty to spare, it won't change your FPS.
 
-[b]I updated my mods. Do I need to redo the fix?[/b]
-Yes: run 2 - Apply budget fix again; it replaces the old fix file. Since v0.4.0 the scan tells you when it's needed: if a mod the fix took textures from was updated or removed, the report says "The budget fix is out of date". (Until then, the fix keeps showing the old versions of those textures, or textures of a mod you removed.) The report also shows what changed since your last scan.
+[b]I updated or added mods. Do I need to redo the fix?[/b]
+If the scan says so: run 2 - Apply budget fix again (or Apply budget fix in the app); it replaces the old fix file. The scan tells you when it's needed: if a mod the fix took textures from was updated or removed, the report says "The budget fix is out of date", and since v0.6.0 it also says when mods you added since have textures the fix would shrink ("N textures aren't in the budget fix yet"). (Until then, the fix keeps showing the old versions of those textures, or textures of a mod you removed.) The report also shows what changed since your last scan.
 
 [b]Immersive Third Person's lipsync file showed 1–2 GB of VRAM. Should I delete it?[/b]
 No. That file holds V's lip-sync animations, and animations load into system RAM, not into your graphics card's VRAM. Versions up to 0.3.1 counted every kind of data as VRAM, which made animation, appearance and world files look far heavier than they are. Since v0.4.0 only data that goes to the graphics card counts (textures, models, morph targets, masks); the rest is shown as "other data (system RAM, not VRAM)". Deleting the lipsync file only removes the lip sync. If you deleted it, reinstall Immersive Third Person to get it back.

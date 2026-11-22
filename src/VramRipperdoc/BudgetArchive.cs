@@ -20,17 +20,37 @@ public static class BudgetArchive
     /// <summary>
     /// Whether a fix still matches the installed mods. Changed: the mod file a texture was made from is different now
     /// (the mod was updated, or another mod now wins), so the fix shows an old version. Removed: no installed mod has
-    /// that file any more, so the fix brings back a texture of a mod you removed. Fixes made by v0.3.1 or older have no
-    /// manifest, so for them only removals can be found.
+    /// that file any more, so the fix brings back a texture of a mod you removed. Icons: screen graphics that v0.5.3
+    /// and older shrank by mistake. Fixes made by v0.3.1 or older have no manifest, so for them only removals and
+    /// icons can be found.
     /// </summary>
-    public sealed record FixCheck(int Textures, List<string> Changed, List<string> Removed, bool HasManifest)
+    public sealed class FixCheck
     {
-        public bool Stale => Changed.Count > 0 || Removed.Count > 0;
+        public int Textures;
+        public List<string> Changed = new(), Removed = new(), Icons = new();
+        public bool HasManifest;
+        /// <summary>The choices the fix was made with. Null for fixes made before v0.6.0, which didn't write them down.</summary>
+        public FixOptions? Options;
+        /// <summary>How many times each texture in the fix was halved (1 when the fix doesn't say).</summary>
+        public Dictionary<ulong, int> Halvings = new();
+        /// <summary>Textures the fix was asked to shrink but couldn't (unusual format): they aren't "left out".</summary>
+        public HashSet<ulong> Skipped = new();
+        /// <summary>Normal-play VRAM the fix saves as it is now. Null when the fix doesn't say how far it halved (no manifest).</summary>
+        public long? NormalSaves;
+        /// <summary>
+        /// Textures a fix made again now, with the same choices, would shrink but this one doesn't (see <see cref="Cover"/>):
+        /// from mods added since, or because the game's settings leave less room now.
+        /// </summary>
+        public List<string> NotCovered = new();
+        public long NotCoveredSaves;
 
-        public string Describe() => string.Join(" and ", new[]
+        public bool Stale => Changed.Count > 0 || Removed.Count > 0 || Icons.Count > 0;
+
+        public string Describe() => string.Join(", and ", new[]
         {
-            Changed.Count > 0 ? $"{Changed.Count:N0} of its {Textures:N0} textures come from mods that were updated since" : null,
-            Removed.Count > 0 ? $"{Removed.Count:N0} come from mods you removed" : null,
+            Changed.Count > 0 ? $"{Changed.Count:N0} of its {Textures:N0} textures come from mods that were updated since, so it still shows their old versions" : null,
+            Removed.Count > 0 ? $"{Removed.Count:N0} come from mods you removed, so it brings them back" : null,
+            Icons.Count > 0 ? $"{Icons.Count:N0} are icons, which v0.5.3 and older shrank by mistake (they look smaller in game)" : null,
         }.OfType<string>());
     }
 
@@ -43,32 +63,67 @@ public static class BudgetArchive
             var winners = new Dictionary<ulong, (ModReport Mod, AssetInfo Asset)>();
             foreach (var m in r.Mods.Where(m => m.Error == null))
                 foreach (var x in m.Assets.Where(x => x.Loads)) winners.TryAdd(x.Hash, (m, x));
-            Dictionary<ulong, (string Sha1, string Name)>? manifest = null;
+            var c = new FixCheck();
+            Dictionary<ulong, (string Sha1, string Name, int Halvings)>? manifest = null;
             if (a.Entries.FirstOrDefault(e => e.Hash == ManifestHash) is { } me && a.ReadSegment(a.Segments[(int)me.SegmentsStart]) is { } bytes)
             {
                 using var doc = JsonDocument.Parse(bytes);
-                manifest = doc.RootElement.GetProperty("files").EnumerateArray().ToDictionary(
+                var root = doc.RootElement;
+                manifest = root.GetProperty("files").EnumerateArray().ToDictionary(
                     f => Convert.ToUInt64(f.GetProperty("hash").GetString(), 16),
-                    f => (f.GetProperty("sha1").GetString() ?? "", f.GetProperty("name").GetString() ?? ""));
+                    f => (f.GetProperty("sha1").GetString() ?? "", f.GetProperty("name").GetString() ?? "",
+                        f.TryGetProperty("halvings", out var hv) && hv.TryGetInt32(out int n) ? n : 1));
+                if (root.TryGetProperty("options", out var o) && o.ValueKind == JsonValueKind.Object)
+                    c.Options = new FixOptions(o.GetProperty("normal").GetBoolean(), o.GetProperty("newItemsMax").GetInt32(), o.GetProperty("extraRoom").GetInt64());
+                if (root.TryGetProperty("skipped", out var sk) && sk.ValueKind == JsonValueKind.Array)
+                    foreach (var s in sk.EnumerateArray()) c.Skipped.Add(Convert.ToUInt64(s.GetString(), 16));
             }
-            var changed = new List<string>();
-            var removed = new List<string>();
-            int textures = 0;
+            c.HasManifest = manifest != null;
+            long saves = 0;
             foreach (var e in a.Entries.Where(e => e.Hash != ManifestHash))
             {
-                textures++;
-                (string Sha1, string Name) made = manifest != null && manifest.TryGetValue(e.Hash, out var v) ? v : ("", "");
+                c.Textures++;
+                (string Sha1, string Name, int Halvings) made = manifest != null && manifest.TryGetValue(e.Hash, out var v) ? v : ("", "", 1);
+                c.Halvings[e.Hash] = made.Halvings;
                 string name = made.Name.Length > 0 ? made.Name : winners.TryGetValue(e.Hash, out var known) ? known.Asset.DisplayName : $"0x{e.Hash:X16}";
-                if (!winners.TryGetValue(e.Hash, out var now)) removed.Add(name);
-                else if (made.Sha1.Length > 0 && !made.Sha1.Equals(Convert.ToHexString(now.Asset.Sha1), StringComparison.OrdinalIgnoreCase))
-                    changed.Add($"{name} ({now.Mod.Name})");
+                if (!winners.TryGetValue(e.Hash, out var now)) { c.Removed.Add(name); continue; }
+                if (made.Sha1.Length > 0 && !made.Sha1.Equals(Convert.ToHexString(now.Asset.Sha1), StringComparison.OrdinalIgnoreCase))
+                    c.Changed.Add($"{name} ({now.Mod.Name})");
+                else if (now.Asset.IsUi) c.Icons.Add($"{name} ({now.Mod.Name})");
+                else if (now.Asset.AlwaysLoaded) saves += Saves(now.Asset, made.Halvings);
             }
-            return new FixCheck(textures, changed, removed, manifest != null);
+            if (manifest != null) c.NormalSaves = saves;
+            return c;
         }
         catch { return null; }
     }
 
-    static WriteEntry ManifestEntry(IEnumerable<(ulong Hash, string Sha1, string Name, string Archive, int Halvings)> files)
+    /// <summary>VRAM saved by halving a texture this many times, never counting below what the game's own file costs.</summary>
+    static long Saves(AssetInfo a, int halvings)
+    {
+        long save = a.GpuBytes - (a.GpuBytes >> (2 * Math.Clamp(halvings, 0, 15)));
+        return a.OverridesBase ? Math.Min(save, Math.Max(0, a.GpuBytes - a.BaseGpuBytes)) : save;
+    }
+
+    /// <summary>
+    /// Fills <see cref="FixCheck.NotCovered"/>: what applying the fix again now, with the choices it was made with,
+    /// would shrink on top of what it already has. Needs those choices, so fixes made before v0.6.0 are left alone.
+    /// </summary>
+    public static void Cover(FixCheck c, ScanResult r, long budget, IReadOnlySet<string>? keepSharp)
+    {
+        c.NotCovered.Clear();
+        c.NotCoveredSaves = 0;
+        if (c.Options == null) return;
+        foreach (var s in BudgetPlan.Pick(r, budget, c.Options, keepSharp))
+        {
+            int have = c.Halvings.GetValueOrDefault(s.Asset.Hash);
+            if (have >= s.Halvings || c.Skipped.Contains(s.Asset.Hash)) continue;
+            c.NotCovered.Add($"{s.Asset.DisplayName} ({s.Mod.Name})");
+            c.NotCoveredSaves += Math.Max(0, s.Saves - (have > 0 ? Saves(s.Asset, have) : 0));
+        }
+    }
+
+    static WriteEntry ManifestEntry(IEnumerable<(ulong Hash, string Sha1, string Name, string Archive, int Halvings)> files, FixOptions? options, IEnumerable<ulong> skipped)
     {
         using var ms = new MemoryStream();
         using (var w = new Utf8JsonWriter(ms, new JsonWriterOptions { Indented = true }))
@@ -76,6 +131,13 @@ public static class BudgetArchive
             w.WriteStartObject();
             w.WriteString("tool", Report.Version);
             w.WriteString("created", DateTime.UtcNow.ToString("o"));
+            if (options != null)
+            {
+                w.WriteStartObject("options");
+                w.WriteBoolean("normal", options.Normal); w.WriteNumber("newItemsMax", options.NewItemsMax); w.WriteNumber("extraRoom", options.ExtraRoom);
+                w.WriteEndObject();
+            }
+            w.WriteStartArray("skipped"); foreach (var h in skipped.Distinct().OrderBy(h => h)) w.WriteStringValue($"{h:X16}"); w.WriteEndArray();
             w.WriteStartArray("files");
             foreach (var f in files.OrderBy(f => f.Hash))
             {
@@ -158,6 +220,7 @@ public static class BudgetArchive
 
         var sources = new Dictionary<string, (RdarArchive A, Dictionary<ulong, ArchiveEntry> ByHash)>(StringComparer.OrdinalIgnoreCase);
         var skipped = new System.Collections.Concurrent.ConcurrentBag<string>();
+        var skippedHashes = new System.Collections.Concurrent.ConcurrentBag<ulong>();
         var made = new System.Collections.Concurrent.ConcurrentBag<(ulong, string, string, string, int)>();
         long saved = 0;
         // Cap on uncompressed texture bytes being processed at once (one 8K BC7 texture alone is ~90 MB).
@@ -179,6 +242,7 @@ public static class BudgetArchive
             {
                 string label = $"{step.Mod.Name}: {step.Asset.DisplayName}";
                 long need = 0;
+                bool written = false;
                 var sw = System.Diagnostics.Stopwatch.StartNew();
                 try
                 {
@@ -206,12 +270,15 @@ public static class BudgetArchive
                     writer.Add(new WriteEntry(e.Hash, e.Timestamp, e.NumInlineBufferSegments,
                         new[] { (res.HeaderRaw, res.HeaderSize), (res.BufferRaw, res.BufferSize) }, deps, res.Sha1));
                     made.Add((e.Hash, Convert.ToHexString(e.Sha1), step.Asset.DisplayName, System.IO.Path.GetFileName(step.Mod.File), step.Halvings));
+                    written = true;
                     Interlocked.Add(ref saved, buf.Length - res.BufferSize);
                     trace?.Invoke($"done  {label} in {sw.ElapsedMilliseconds} ms");
                 }
                 catch (Exception ex) { skipped.Add($"{label} ({ex.Message})"); trace?.Invoke($"error {label}: {ex}"); }
                 finally
                 {
+                    // Remembered in the fix, so a later scan doesn't keep saying this texture is left out.
+                    if (!written) skippedHashes.Add(step.Asset.Hash);
                     status.InFlight.TryRemove(label, out _);
                     if (need > 0) lock (memGate) { inFlightBytes -= need; Monitor.PulseAll(memGate); }
                     Interlocked.Increment(ref status.Done);
@@ -231,7 +298,7 @@ public static class BudgetArchive
         var path = System.IO.Path.Combine(dir, name);
         if (writer.Count == 0) { log("Nothing to write: no plan steps could be applied."); return new Outcome(path, 0, 0, skipped.ToList()); }
         int count = writer.Count;
-        writer.Add(ManifestEntry(made));
+        writer.Add(ManifestEntry(made, plan.Made, skippedHashes));
         status.Phase = "saving";
         trace?.Invoke($"saving {path}");
         writer.Write(path);

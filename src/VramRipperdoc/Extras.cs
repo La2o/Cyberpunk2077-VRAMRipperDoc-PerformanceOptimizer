@@ -79,7 +79,7 @@ public static class Summary
         var broken = r.Mods.Where(m => m.Error != null).ToList();
         if (broken.Count > 0) sb.AppendLine().AppendLine("**Broken archives:** " + string.Join(", ", broken.Select(b => $"`{b.Name}`")));
         var missing = r.Mods.Where(m => m.Missing > 0).ToList();
-        if (missing.Count > 0) sb.AppendLine().AppendLine("**Missing references (requirement not installed?):** " + string.Join(", ", missing.Select(m => $"`{m.Name}` ({m.Missing})")));
+        if (missing.Count > 0) sb.AppendLine().AppendLine("**Point at files that aren't installed (usually harmless leftovers):** " + string.Join(", ", missing.Take(40).Select(m => $"`{m.Name}` ({m.Missing})")) + (missing.Count > 40 ? $" and {missing.Count - 40} more" : ""));
         return sb.ToString();
     }
 }

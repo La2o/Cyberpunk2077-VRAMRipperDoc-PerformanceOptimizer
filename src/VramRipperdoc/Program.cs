@@ -27,6 +27,7 @@ Usage: VramRipperdoc [options]
   --make-budget-archive     Write ONE extra archive with the planned textures shrunk (your mods are untouched)
   --include-new-items       Also shrink new clothing, cars and props to 2K (they only cost VRAM while used)
   --new-items-to 1k         ... to 1K instead (softer up close; fine on small screens like the Steam Deck)
+  --extra-room <GB>         Free this much more than the estimate asks for (if the game still runs out of VRAM with the fix)
   --threads <n>             Worker threads for writing the fix (default: CPU cores - 1, max 8; 2 under MO2)
   --remove-budget-archive   Delete it again
  Measure real VRAM
@@ -78,6 +79,7 @@ if (opts.ContainsKey("test-paths")) return PathTest.Run();
 if (opts.TryGetValue("make-classes", out var classesOut) && classesOut != null)
     return ClassFixture.Make(FindGame(opts.GetValueOrDefault("game"))!, classesOut, int.Parse(opts.GetValueOrDefault("count") ?? "3"));
 if (opts.TryGetValue("class-stats", out var every) && every != null) return ClassStats.Run(FindGame(opts.GetValueOrDefault("game"))!, int.Parse(every));
+if (opts.TryGetValue("test-variants", out var tv) && tv != null) return MeshVariantsTest.Run(FindGame(opts.GetValueOrDefault("game"))!, int.Parse(tv));
 if (opts.TryGetValue("test-epic", out var epicDir) && epicDir != null)
 {
     foreach (var dir in EpicInstallLocations(epicDir)) Console.WriteLine($"{dir}  game={IsGame(dir)}");
@@ -190,10 +192,16 @@ catch (Exception ex)
 }
 
 long budget = Budget(result, opts);
-CheckFix(result, modRoot, fixDirs);
+CheckFix(result, modRoot, fixDirs, budget, keepSharp);
 int newItemsMax = opts.GetValueOrDefault("new-items-to")?.Trim().ToLowerInvariant() is "1k" or "1024" ? 1024 : 2048;
+// Extra room: the fix aims below the estimated room, for when the game still runs out of VRAM with it. The report keeps the estimate.
+long extraRoom = double.TryParse(opts.GetValueOrDefault("extra-room"), System.Globalization.CultureInfo.InvariantCulture, out var extraGb) && extraGb > 0 ? (long)(extraGb * (1L << 30)) : 0;
+long roomTarget = Math.Max(0, budget - extraRoom);
 var plan = BudgetPlan.Build(result, budget, includeNew: opts.ContainsKey("include-new-items"), newItemsMax, keepSharp);
+plan.Made = new FixOptions(true, opts.ContainsKey("include-new-items") ? newItemsMax : 0, extraRoom);
+if (extraRoom > 0 && opts.ContainsKey("make-budget-archive")) plan.Steps = BudgetPlan.Pick(result, budget, plan.Made, keepSharp);
 int keptSharp = result.Mods.Select(KeepSharp.NameOf).Where(keepSharp.Contains).Distinct(StringComparer.OrdinalIgnoreCase).Count();
+if (opts.ContainsKey("stress-all")) plan.Made = null;
 if (opts.ContainsKey("stress-all")) // developer stress test: halve every loaded 2K+ texture
     plan.Steps = result.Mods.SelectMany(m => m.Assets.Where(a => a.Kind == AssetKind.Texture && a.Loads && a.MaxDim >= 2048).Select(a => new PlanStep(m, a, 1, a.GpuBytes * 3 / 4))).ToList();
 
@@ -227,20 +235,23 @@ if (makingFix)
     {
         // Show what each choice involves (counts, size, rough time) before asking.
         asked = true;
-        var normal = BudgetPlan.Build(result, budget, includeNew: false, keepSharp: keepSharp);
-        List<PlanStep> NewItems(int max) => BudgetPlan.Build(result, budget, includeNew: true, max, keepSharp).Steps.Where(s => !s.Asset.AlwaysLoaded).ToList();
+        var normal = BudgetPlan.Build(result, roomTarget, includeNew: false, keepSharp: keepSharp);
+        List<PlanStep> NewItems(int max) => BudgetPlan.Build(result, roomTarget, includeNew: true, max, keepSharp).Steps.Where(s => !s.Asset.AlwaysLoaded).ToList();
         var to2k = NewItems(2048);
         var to1k = NewItems(1024);
         var chosen = new List<PlanStep>();
+        bool halveNormal = true; int newMax = 0;
+        string room = extraRoom > 0 ? $"{Report.Size(roomTarget)} ({Report.Size(budget)} minus the {Report.Size(extraRoom)} of extra room you asked for)" : Report.Size(budget);
         if (normal.Current <= normal.Budget)
-            Console.WriteLine($"Normal play: your mods add about {Report.Size(normal.Current)} on top of the game; your card has room for {Report.Size(normal.Budget)}. Nothing to fix there.");
+            Console.WriteLine($"Normal play: your mods add about {Report.Size(normal.Current)} on top of the game; your card has room for {room}. Nothing to fix there.");
         else if (normal.Steps.Count == 0)
             Console.WriteLine($"Normal play: your mods add {Report.Size(normal.Current - normal.Budget)} more than your card has room for, but no texture is big enough to halve. Swap the heaviest mod for a lighter version instead.");
         else
         {
-            Console.WriteLine($"Normal play: your mods add about {Report.Size(normal.Current)} on top of the game, but your card only has room for {Report.Size(normal.Budget)} ({Report.Size(normal.Current - normal.Budget)} too much).");
+            Console.WriteLine($"Normal play: your mods add about {Report.Size(normal.Current)} on top of the game, but your card only has room for {room} ({Report.Size(normal.Current - normal.Budget)} too much).");
             Console.WriteLine($"  Fix: halve {normal.Steps.Count:N0} texture(s), saving about {Report.Size(normal.Steps.Sum(s => s.Saves))}. {Describe(normal.Steps)}");
-            if (Ask("Halve these textures?")) chosen.AddRange(normal.Steps);
+            halveNormal = Ask("Halve these textures?");
+            if (halveNormal) chosen.AddRange(normal.Steps);
         }
         if (normal.Current > normal.Budget && Report.SettingsTips(result) is { Length: > 0 } tips)
             Console.WriteLine($"  Lower settings also give mods more room (estimates): {tips}.");
@@ -265,9 +276,10 @@ if (makingFix)
                     + $"They look softer up close; on small screens like the Steam Deck's that's hard to see. {Describe(to1k)}");
                 if (Ask(pick != null ? "Go further, to 1K instead?" : "Shrink these to 1K?")) pick = to1k;
             }
-            if (pick != null) chosen.AddRange(pick);
+            if (pick != null) { chosen.AddRange(pick); newMax = pick == to1k ? 1024 : 2048; }
         }
         plan.Steps = chosen;
+        plan.Made = new FixOptions(halveNormal, newMax, extraRoom);
         Console.WriteLine();
     }
     if (plan.Steps.Count == 0)
@@ -330,6 +342,8 @@ if (makingFix)
         Console.WriteLine($"  Finished in {started.Elapsed.TotalSeconds:0}s.");
         Console.WriteLine();
         result.BudgetArchive = outcome.Path;
+        result.FixCheck = BudgetArchive.Check(outcome.Path, result); // so the report shows what this fix does
+        if (result.FixCheck != null) BudgetArchive.Cover(result.FixCheck, result, budget, keepSharp);
         Console.WriteLine($"DONE: {outcome.Textures} texture(s) shrunk, saving up to {Report.Size(outcome.SavedBytes)} of VRAM.");
         Console.WriteLine();
         Console.WriteLine("The fix is ONE new file (your mods were not changed):");

@@ -61,6 +61,17 @@ public sealed record GpuInfo(string Name, long VramBytes)
 
 public sealed record PlanStep(ModReport Mod, AssetInfo Asset, int Halvings, long Saves);
 
+/// <summary>
+/// The choices a fix is made with: halve normal-play textures until they fit, shrink new items' textures down to
+/// <see cref="NewItemsMax"/> (0 = leave them), and free <see cref="ExtraRoom"/> bytes more than the estimate asks for
+/// (for when the game still runs out of VRAM with the fix active).
+/// </summary>
+public sealed record FixOptions(bool Normal, int NewItemsMax, long ExtraRoom)
+{
+    /// <summary>Extra room on offer, in GB. More than 2 GB would shrink nearly everything, which Keep sharp and Undo exist to avoid.</summary>
+    public static readonly double[] ExtraRoomChoices = { 0.5, 1, 2 };
+}
+
 public sealed class BudgetPlan
 {
     public long Budget;
@@ -77,14 +88,27 @@ public sealed class BudgetPlan
     public List<(ModReport Mod, long Saves, int Count)> PerMod = new();
     /// <summary>Textures the plan could have shrunk but left alone because their mod is on the keep-sharp list.</summary>
     public List<(ModReport Mod, AssetInfo Asset)> KeptSharp = new();
+    /// <summary>The choices <see cref="Steps"/> were picked with. Written into the fix, so a later scan can tell what it leaves out.</summary>
+    public FixOptions? Made;
     public bool Reachable => AfterPlan <= Budget;
+
+    /// <summary>The textures a fix made with these choices shrinks.</summary>
+    public static List<PlanStep> Pick(ScanResult r, long budget, FixOptions o, IReadOnlySet<string>? keepSharp)
+    {
+        long target = Math.Max(0, budget - o.ExtraRoom);
+        var steps = o.Normal ? Build(r, target, keepSharp: keepSharp).Steps : new List<PlanStep>();
+        if (o.NewItemsMax > 0)
+            steps.AddRange(Build(r, target, includeNew: true, o.NewItemsMax, keepSharp).Steps.Where(s => !s.Asset.AlwaysLoaded));
+        return steps;
+    }
 
     /// <summary>
     /// Greedy plan over always-loaded textures: repeatedly halve whichever saves the most VRAM
     /// (each halving removes ~75% of it), never below 1024 px, until the budget fits.
     /// With <paramref name="includeNew"/>, new items' textures above <paramref name="newItemsMax"/> (2K, or 1K) are also
     /// halved down to it: they only cost VRAM while used, so they never count against the budget itself.
-    /// Mods in <paramref name="keepSharp"/> (see <see cref="VramRipperdoc.KeepSharp"/>) are never shrunk.
+    /// Mods in <paramref name="keepSharp"/> (see <see cref="VramRipperdoc.KeepSharp"/>) are never shrunk, and neither
+    /// are icons and other screen graphics (<see cref="AssetInfo.IsUi"/>): those would look smaller in game.
     /// Original archives are never touched; the plan is applied as a separate archive.
     /// </summary>
     public static BudgetPlan Build(ScanResult r, long budget, bool includeNew = false, int newItemsMax = 2048, IReadOnlySet<string>? keepSharp = null)
@@ -92,7 +116,7 @@ public sealed class BudgetPlan
         var plan = new BudgetPlan { Budget = budget, Current = r.AlwaysDelta, WhenUsed = r.WhenUsedDelta, IncludeNew = includeNew, NewItemsMax = newItemsMax };
         long current = plan.Current;
         bool Kept(ModReport m) => keepSharp is { Count: > 0 } && keepSharp.Contains(VramRipperdoc.KeepSharp.NameOf(m));
-        var candidates = r.Mods.SelectMany(m => m.Assets.Where(a => a.Kind == AssetKind.Texture && a.Loads && a.AlwaysLoaded && a.MaxDim >= 2048 && a.DeltaGpu > 0)
+        var candidates = r.Mods.SelectMany(m => m.Assets.Where(a => a.Kind == AssetKind.Texture && a.Loads && a.AlwaysLoaded && !a.IsUi && a.MaxDim >= 2048 && a.DeltaGpu > 0)
             .Select(a => (Mod: m, Asset: a))).ToList();
         plan.KeptSharp.AddRange(candidates.Where(c => Kept(c.Mod)));
         candidates.RemoveAll(c => Kept(c.Mod));
@@ -117,7 +141,7 @@ public sealed class BudgetPlan
 
         if (includeNew)
             foreach (var m in r.Mods)
-                foreach (var a in m.Assets.Where(a => a.Kind == AssetKind.Texture && a.Loads && !a.AlwaysLoaded && a.MaxDim > newItemsMax && a.MaxDim >= 2048))
+                foreach (var a in m.Assets.Where(a => a.Kind == AssetKind.Texture && a.Loads && !a.AlwaysLoaded && !a.IsUi && a.MaxDim > newItemsMax && a.MaxDim >= 2048))
                 {
                     if (Kept(m)) { plan.KeptSharp.Add((m, a)); continue; }
                     int halvings = 0;
